@@ -22,13 +22,17 @@ const rooms = new Map();
  *   players: Player[],
  *   turn: string | null,
  *   status: 'waiting' | 'setup' | 'playing' | 'finished',
- *   guesses: Array<{ by: string, guess: string, correctPositions: number, correctDigits: number }>,
+ *   guesses: Array<{ by: string, guess: string, correctPositions: number }>,
  *   winner: string | null,
  *   createdAt: number
  * }} Room
  */
 
 app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
 
 function generateCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -41,9 +45,7 @@ function generateCode() {
 }
 
 function isValidSecret(secret) {
-  if (typeof secret !== "string" || secret.length !== DIGIT_COUNT) return false;
-  if (!/^\d+$/.test(secret)) return false;
-  return new Set(secret).size === DIGIT_COUNT;
+  return typeof secret === "string" && /^\d{4}$/.test(secret);
 }
 
 function scoreGuess(secret, guess) {
@@ -51,26 +53,20 @@ function scoreGuess(secret, guess) {
   for (let i = 0; i < DIGIT_COUNT; i++) {
     if (guess[i] === secret[i]) correctPositions++;
   }
-  const secretCounts = {};
-  const guessCounts = {};
-  for (let i = 0; i < DIGIT_COUNT; i++) {
-    secretCounts[secret[i]] = (secretCounts[secret[i]] || 0) + 1;
-    guessCounts[guess[i]] = (guessCounts[guess[i]] || 0) + 1;
-  }
-  let correctDigits = 0;
-  for (const d of Object.keys(guessCounts)) {
-    correctDigits += Math.min(guessCounts[d], secretCounts[d] || 0);
-  }
-  return { correctPositions, correctDigits };
+  return { correctPositions };
 }
 
 function publicRoom(room, viewerId) {
+  const me = room.players.find((p) => p.id === viewerId);
   return {
     code: room.code,
     status: room.status,
     turn: room.turn,
     winner: room.winner,
-    guesses: room.guesses,
+    mySecret: me?.secret || null,
+    guesses: room.guesses
+      .filter((g) => g.by === viewerId)
+      .map(({ guess, correctPositions }) => ({ guess, correctPositions })),
     players: room.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -146,7 +142,7 @@ io.on("connection", (socket) => {
     if (!isValidSecret(secret)) {
       return cb?.({
         ok: false,
-        error: "لازم ٤ أرقام مختلفة (مثال: 7291)",
+        error: "لازم ٤ أرقام (مثال: 1123)",
       });
     }
 
@@ -172,7 +168,7 @@ io.on("connection", (socket) => {
     if (!isValidSecret(guessStr)) {
       return cb?.({
         ok: false,
-        error: "التخمين لازم يكون ٤ أرقام مختلفة",
+        error: "التخمين لازم يكون ٤ أرقام",
       });
     }
 
@@ -182,12 +178,11 @@ io.on("connection", (socket) => {
       return cb?.({ ok: false, error: "خطأ في حالة اللعبة" });
     }
 
-    const { correctPositions, correctDigits } = scoreGuess(opponent.secret, guessStr);
+    const { correctPositions } = scoreGuess(opponent.secret, guessStr);
     room.guesses.push({
       by: socket.id,
       guess: guessStr,
       correctPositions,
-      correctDigits,
     });
 
     if (correctPositions === DIGIT_COUNT) {
@@ -202,7 +197,6 @@ io.on("connection", (socket) => {
     cb?.({
       ok: true,
       correctPositions,
-      correctDigits,
       won: correctPositions === DIGIT_COUNT,
     });
   });

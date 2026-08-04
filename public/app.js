@@ -10,7 +10,26 @@ const state = {
   guessDraft: "",
   busy: false,
   joinCode: "",
+  trackerOpen: false,
+  crossed: new Set(),
+  trackerGameKey: null,
 };
+
+function clearTracker() {
+  state.crossed = new Set();
+  state.trackerOpen = false;
+  state.trackerGameKey = null;
+}
+
+function ensureTrackerForRoom() {
+  const key = state.room?.code || null;
+  if (!key) return;
+  if (state.trackerGameKey !== key) {
+    state.crossed = new Set();
+    state.trackerGameKey = key;
+    state.trackerOpen = false;
+  }
+}
 
 function escapeHtml(str) {
   return String(str)
@@ -95,9 +114,88 @@ function roomHeader() {
   return `
     <div class="topbar">
       <div class="pill">الغرفة <strong>${escapeHtml(state.room.code)}</strong></div>
-      <button class="btn btn-ghost copy-btn" id="copyCode">نسخ الرابط</button>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost copy-btn" id="trackerBtn" type="button">القائمة</button>
+        <button class="btn btn-ghost copy-btn" id="copyCode" type="button">نسخ الرابط</button>
+      </div>
     </div>
   `;
+}
+
+function trackerCellKey(digit, slot) {
+  return `${digit}-${slot}`;
+}
+
+function trackerOverlay() {
+  if (!state.trackerOpen) return "";
+  const rows = Array.from({ length: 10 }, (_, digit) => {
+    const cells = [0, 1, 2, 3]
+      .map((slot) => {
+        const key = trackerCellKey(digit, slot);
+        const crossed = state.crossed.has(key);
+        return `
+          <button type="button" class="tracker-cell ${crossed ? "crossed" : ""}" data-key="${key}" aria-label="${digit}">
+            <span>${digit}</span>
+            ${crossed ? '<i class="tracker-x" aria-hidden="true">✕</i>' : ""}
+          </button>`;
+      })
+      .join("");
+    return `<div class="tracker-row">${cells}</div>`;
+  }).join("");
+
+  return `
+    <div class="tracker-overlay" id="trackerOverlay" role="dialog" aria-modal="true" aria-label="قائمة الأرقام">
+      <div class="tracker-sheet">
+        <button class="tracker-close" id="trackerClose" type="button" aria-label="إغلاق">×</button>
+        <h2 class="tracker-title">علّم الأرقام</h2>
+        <p class="tracker-hint">اضغط الرقم لحاله عشان تحط عليه X</p>
+        <div class="tracker-grid">${rows}</div>
+      </div>
+    </div>
+  `;
+}
+
+function bindTracker() {
+  const openBtn = document.getElementById("trackerBtn");
+  if (openBtn) {
+    openBtn.onclick = () => {
+      ensureTrackerForRoom();
+      state.trackerOpen = true;
+      render();
+    };
+  }
+
+  const closeBtn = document.getElementById("trackerClose");
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      state.trackerOpen = false;
+      render();
+    };
+  }
+
+  const overlay = document.getElementById("trackerOverlay");
+  if (overlay) {
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        state.trackerOpen = false;
+        render();
+      }
+    });
+  }
+
+  document.querySelectorAll(".tracker-cell").forEach((btn) => {
+    btn.onclick = () => {
+      const key = btn.dataset.key;
+      if (state.crossed.has(key)) state.crossed.delete(key);
+      else state.crossed.add(key);
+      render();
+    };
+  });
+}
+
+function bindRoomChrome() {
+  bindCopy();
+  bindTracker();
 }
 
 function playersBlock() {
@@ -139,6 +237,7 @@ function bindCopy() {
 }
 
 function renderLobby() {
+  ensureTrackerForRoom();
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
@@ -149,13 +248,24 @@ function renderLobby() {
         <p class="hint">أو انسخ رابط الدعوة وابعثه له مباشرة.</p>
       </div>
     </section>
+    ${trackerOverlay()}
   `;
-  bindCopy();
+  bindRoomChrome();
+}
+
+function mySecretBar() {
+  const secret = state.room?.mySecret;
+  if (!secret) return "";
+  return `
+    <div class="my-secret">
+      <span>رقمك</span>
+      <strong>${escapeHtml(secret)}</strong>
+    </div>
+  `;
 }
 
 function digitPad(draftKey, submitLabel, onSubmit) {
   const draft = state[draftKey];
-  const used = new Set(draft.split(""));
   return `
     <div class="panel stack">
       <div>
@@ -164,10 +274,7 @@ function digitPad(draftKey, submitLabel, onSubmit) {
       </div>
       <div class="digit-pad" id="pad">
         ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-          .map(
-            (d) =>
-              `<button type="button" data-d="${d}" class="${used.has(String(d)) ? "used" : ""}">${d}</button>`
-          )
+          .map((d) => `<button type="button" data-d="${d}">${d}</button>`)
           .join("")}
         <button type="button" class="action" data-act="del">⌫</button>
         <button type="button" class="action" data-act="clr">مسح</button>
@@ -197,7 +304,6 @@ function bindDigitPad(draftKey, onSubmit) {
     }
     const d = btn.dataset.d;
     if (d == null) return;
-    if (state[draftKey].includes(d)) return;
     if (state[draftKey].length >= 4) return;
     state[draftKey] += d;
     state.error = "";
@@ -207,59 +313,60 @@ function bindDigitPad(draftKey, onSubmit) {
 }
 
 function renderSetup() {
+  ensureTrackerForRoom();
   const self = me();
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
-      <p class="status-line">${self?.ready ? "تم تثبيت رقمك. بانتظار الخصم..." : "اختر ٤ أرقام مختلفة وثبّتها"}</p>
+      ${mySecretBar()}
+      <p class="status-line">${self?.ready ? "تم تثبيت رقمك. بانتظار الخصم..." : "اختر ٤ أرقام وثبّتها"}</p>
       ${playersBlock()}
       ${
         self?.ready
-          ? `<div class="panel"><p class="hint">رقمك السري محفوظ. ما أحد يشوفه غيرك. لما الخصم يثبت رقمه تبدأ المبارزة.</p></div>`
+          ? `<div class="panel"><p class="hint">رقمك السري محفوظ فوق. ما أحد يشوفه غيرك. لما الخصم يثبت رقمه تبدأ المبارزة.</p></div>`
           : `${digitPad("secretDraft", "تثبيت الرقم", setSecret)}
-             <p class="hint">القاعدة: ٤ أرقام مختلفة من ٠ إلى ٩. الخصم يحاول يخمنها وأنت تحاول تخمن رقمه.</p>`
+             <p class="hint">٤ أرقام من ٠ إلى ٩، والتكرار مسموح. الخصم يحاول يخمنها وأنت تحاول تخمن رقمه.</p>`
       }
     </section>
+    ${trackerOverlay()}
   `;
-  bindCopy();
+  bindRoomChrome();
   if (!self?.ready) bindDigitPad("secretDraft", setSecret);
 }
 
 function historyBlock() {
   const guesses = [...(state.room.guesses || [])].reverse();
   if (!guesses.length) {
-    return `<div class="panel"><p class="hint">ما فيه تخمينات بعد. ابدأ أول ضربة!</p></div>`;
+    return `<div class="panel"><p class="hint">ما فيه تخمينات لك بعد. ابدأ أول ضربة!</p></div>`;
   }
   return `
     <div class="history">
       ${guesses
-        .map((g) => {
-          const mine = g.by === socket.id;
-          return `
+        .map(
+          (g) => `
             <div class="guess-row">
-              <div class="who">${mine ? "أنت" : "هو"}</div>
               <div class="num">${escapeHtml(g.guess)}</div>
               <div class="score">
-                <span class="badge pos" title="في المكان الصحيح">${g.correctPositions}</span>
-                <span class="badge dig" title="أرقام صحيحة">${g.correctDigits}</span>
+                <span class="badge pos" title="في الخانة الصحيحة">${g.correctPositions} صح</span>
               </div>
-            </div>`;
-        })
+            </div>`
+        )
         .join("")}
     </div>
     <div class="legend">
-      <span><i class="badge pos" style="display:inline-block;min-width:auto;padding:2px 8px">N</i> في الخانة الصحيحة</span>
-      <span><i class="badge dig" style="display:inline-block;min-width:auto;padding:2px 8px">N</i> أرقام موجودة (أي مكان)</span>
+      <span>الرقم = كم خانة صحيحة في مكانها فقط</span>
     </div>
   `;
 }
 
 function renderPlay() {
+  ensureTrackerForRoom();
   const myTurn = state.room.turn === socket.id;
   const opp = opponent();
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
+      ${mySecretBar()}
       <p class="status-line ${myTurn ? "turn-you" : "turn-them"}">
         ${myTurn ? "دورك — خمّن رقم الخصم" : `دور ${escapeHtml(opp?.name || "الخصم")}...`}
       </p>
@@ -271,17 +378,20 @@ function renderPlay() {
       }
       ${historyBlock()}
     </section>
+    ${trackerOverlay()}
   `;
-  bindCopy();
+  bindRoomChrome();
   if (myTurn) bindDigitPad("guessDraft", sendGuess);
 }
 
 function renderFinished() {
+  ensureTrackerForRoom();
   const won = state.room.winner === socket.id;
   const winnerName = playerName(state.room.winner);
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
+      ${mySecretBar()}
       <div class="win-box">
         <h2>${won ? "فزت 🔥" : "انتهت الجولة"}</h2>
         <p>${won ? "خمّنت رقم الخصم صح!" : `${escapeHtml(winnerName)} خمّن رقمك.`}</p>
@@ -290,10 +400,12 @@ function renderFinished() {
       ${historyBlock()}
       <button class="btn btn-ghost" id="homeBtn">القائمة الرئيسية</button>
     </section>
+    ${trackerOverlay()}
   `;
-  bindCopy();
+  bindRoomChrome();
   document.getElementById("rematchBtn").onclick = rematch;
   document.getElementById("homeBtn").onclick = () => {
+    clearTracker();
     state.room = null;
     state.screen = "home";
     state.secretDraft = "";
@@ -310,7 +422,9 @@ function createRoom() {
   socket.emit("room:create", { name }, (res) => {
     setBusy(false);
     if (!res?.ok) return setError(res?.error || "فشل إنشاء الغرفة");
+    clearTracker();
     state.room = res.room;
+    state.trackerGameKey = res.room.code;
     state.screen = "lobby";
     state.secretDraft = "";
     render();
@@ -326,7 +440,9 @@ function joinRoom() {
   socket.emit("room:join", { name, code }, (res) => {
     setBusy(false);
     if (!res?.ok) return setError(res?.error || "فشل الانضمام");
+    clearTracker();
     state.room = res.room;
+    state.trackerGameKey = res.room.code;
     state.screen = "setup";
     state.secretDraft = "";
     render();
@@ -358,18 +474,26 @@ function rematch() {
   socket.emit("game:rematch", (res) => {
     setBusy(false);
     if (!res?.ok) return setError(res?.error || "فشل إعادة اللعب");
+    state.crossed = new Set();
+    state.trackerOpen = false;
     state.secretDraft = "";
     state.guessDraft = "";
   });
 }
 
 socket.on("room:update", (room) => {
+  const prevStatus = state.room?.status;
   state.room = room;
   state.error = "";
   if (room.status === "waiting") state.screen = "lobby";
   else if (room.status === "setup") state.screen = "setup";
   else if (room.status === "playing") state.screen = "play";
   else if (room.status === "finished") state.screen = "finished";
+  // إعادة المبارزة من الخصم تعتبر لعبة جديدة
+  if (prevStatus === "finished" && room.status === "setup") {
+    state.crossed = new Set();
+    state.trackerOpen = false;
+  }
   render();
 });
 
@@ -377,6 +501,8 @@ socket.on("room:opponent-left", () => {
   state.error = "الخصم طلع من الغرفة";
   state.secretDraft = "";
   state.guessDraft = "";
+  state.crossed = new Set();
+  state.trackerOpen = false;
   render();
 });
 
