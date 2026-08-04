@@ -68,16 +68,16 @@ language plpgsql
 as $$
 declare
   chars text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  code text := '';
+  v_code text := '';
   i int;
 begin
   for i in 1..5 loop
-    code := code || substr(chars, 1 + floor(random() * length(chars))::int, 1);
+    v_code := v_code || substr(chars, 1 + floor(random() * length(chars))::int, 1);
   end loop;
-  if exists(select 1 from public.nd_rooms r where r.code = code) then
+  if exists(select 1 from public.nd_rooms r where r.code = v_code) then
     return public.nd_gen_code();
   end if;
-  return code;
+  return v_code;
 end;
 $$;
 
