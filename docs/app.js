@@ -5,6 +5,18 @@ const sb = createClient(
   window.ND_CONFIG.supabaseAnonKey
 );
 
+const DIFFS = [
+  { id: 3, label: "سهل", meta: "٣ أرقام" },
+  { id: 4, label: "متوسط", meta: "٤ أرقام" },
+  { id: 5, label: "صعب", meta: "٥ أرقام" },
+];
+
+const THEMES = [
+  { id: "classic", label: "كلاسيك" },
+  { id: "day", label: "نهاري" },
+  { id: "ramadan", label: "رمضاني" },
+];
+
 const state = {
   screen: "home",
   name: localStorage.getItem("nd_name") || "",
@@ -19,28 +31,57 @@ const state = {
   infoOpen: false,
   crossed: new Set(),
   trackerGameKey: null,
+  digitCount: Number(localStorage.getItem("nd_digits") || 4),
+  muted: localStorage.getItem("nd_muted") === "1",
+  theme: localStorage.getItem("nd_theme") || "classic",
+  mode: "online", // online | ai
+  aiSecret: null,
+  aiPlayerId: "ai-bot",
+  lastHint: "",
+  reconnecting: false,
 };
 
-function isValidNumber(value) {
-  if (typeof value !== "string" || !/^\d{4}$/.test(value)) {
-    return { ok: false, error: "لازم ٤ أرقام (مثال: 1123)" };
+let roomChannel = null;
+let audioCtx = null;
+let prevTurn = null;
+
+function digitCount() {
+  return state.room?.digitCount || state.digitCount || 4;
+}
+
+function isValidNumber(value, digits = digitCount()) {
+  if (typeof value !== "string" || value.length !== digits || !new RegExp(`^\\d{${digits}}$`).test(value)) {
+    return { ok: false, error: `لازم ${digits} أرقام` };
   }
-  if (/^(\d)\1{3}$/.test(value)) {
-    return { ok: false, error: "ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111" };
+  if (value === value[0].repeat(digits)) {
+    return { ok: false, error: "ما ينفع تكرر نفس الرقم في كل الخانات" };
   }
   return { ok: true };
 }
 
-let roomChannel = null;
+function randomSecret(digits) {
+  let s = "";
+  do {
+    s = Array.from({ length: digits }, () => Math.floor(Math.random() * 10)).join("");
+  } while (s === s[0].repeat(digits));
+  return s;
+}
+
+function scoreGuess(secret, guess) {
+  let n = 0;
+  for (let i = 0; i < secret.length; i++) if (secret[i] === guess[i]) n++;
+  return n;
+}
 
 function clearTracker() {
   state.crossed = new Set();
   state.trackerOpen = false;
   state.trackerGameKey = null;
+  state.lastHint = "";
 }
 
 function ensureTrackerForRoom() {
-  const key = state.room?.code || null;
+  const key = state.room?.code || (state.mode === "ai" ? "ai" : null);
   if (!key) return;
   if (state.trackerGameKey !== key) {
     state.crossed = new Set();
@@ -50,7 +91,7 @@ function ensureTrackerForRoom() {
 }
 
 function escapeHtml(str) {
-  return String(str)
+  return String(str ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -80,16 +121,76 @@ function setBusy(v) {
   render();
 }
 
-function savePlayerId(code, playerId) {
-  localStorage.setItem(`nd_pid_${code}`, playerId);
+function saveSession() {
+  if (state.mode === "ai" || !state.room?.code || !state.playerId) {
+    localStorage.removeItem("nd_active");
+    return;
+  }
+  localStorage.setItem(
+    "nd_active",
+    JSON.stringify({ code: state.room.code, playerId: state.playerId })
+  );
 }
 
-function loadPlayerId(code) {
-  return localStorage.getItem(`nd_pid_${code}`);
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme);
+  localStorage.setItem("nd_theme", state.theme);
 }
 
-function applyRoom(room) {
+function vibrate(pattern = 30) {
+  try {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  } catch {}
+}
+
+function beep(freq = 520, dur = 0.08, type = "sine", gain = 0.04) {
+  if (state.muted) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.value = gain;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    o.stop(audioCtx.currentTime + dur);
+  } catch {}
+}
+
+function soundGuess(correct, digits) {
+  if (correct >= digits) {
+    beep(660, 0.1);
+    setTimeout(() => beep(880, 0.12), 90);
+    setTimeout(() => beep(990, 0.16), 180);
+    vibrate([40, 40, 80]);
+  } else {
+    beep(420 + correct * 40, 0.07);
+    vibrate(20);
+  }
+}
+
+function soundTurn() {
+  beep(540, 0.09, "triangle", 0.035);
+  vibrate(25);
+}
+
+function inviteText() {
+  const url = `${location.origin}${location.pathname}?code=${state.room.code}`;
+  const d = digitCount();
+  const label = DIFFS.find((x) => x.id === d)?.label || "متوسط";
+  return `يلا نلعب مبارزة الأرقام 🔢\nالصعوبة: ${label} (${d} خانات)\nالكود: ${state.room.code}\nادخل من هنا: ${url}`;
+}
+
+function inviteUrl() {
+  return `${location.origin}${location.pathname}?code=${state.room.code}`;
+}
+
+function applyRoom(room, { silent } = {}) {
   const prevStatus = state.room?.status;
+  const wasMyTurn = state.room?.turn === state.playerId;
   state.room = room;
   state.error = "";
   if (room.status === "waiting") state.screen = "lobby";
@@ -99,11 +200,20 @@ function applyRoom(room) {
   if (prevStatus === "finished" && room.status === "setup") {
     state.crossed = new Set();
     state.trackerOpen = false;
+    state.lastHint = "";
   }
+  if (!silent && room.status === "playing" && room.turn === state.playerId && !wasMyTurn && prevTurn !== room.turn) {
+    soundTurn();
+  }
+  if (!silent && room.status === "finished" && prevStatus !== "finished") {
+    soundGuess(digitCount(), digitCount());
+  }
+  prevTurn = room.turn;
+  saveSession();
 }
 
 async function refreshRoom() {
-  if (!state.room?.code || !state.playerId) return;
+  if (state.mode === "ai" || !state.room?.code || !state.playerId) return;
   const { data, error } = await sb.rpc("nd_get_room", {
     p_code: state.room.code,
     p_player_id: state.playerId,
@@ -124,20 +234,45 @@ function subscribeRoom(code) {
     .channel(`nd-room-${code}`)
     .on(
       "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "nd_rooms",
-        filter: `code=eq.${code}`,
-      },
-      () => {
-        refreshRoom();
-      }
+      { event: "*", schema: "public", table: "nd_rooms", filter: `code=eq.${code}` },
+      () => refreshRoom()
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") state.reconnecting = false;
+    });
+}
+
+async function tryReconnect() {
+  const raw = localStorage.getItem("nd_active");
+  if (!raw) return false;
+  try {
+    const { code, playerId } = JSON.parse(raw);
+    if (!code || !playerId) return false;
+    state.reconnecting = true;
+    render();
+    const { data, error } = await sb.rpc("nd_get_room", {
+      p_code: code,
+      p_player_id: playerId,
+    });
+    state.reconnecting = false;
+    if (error || !data?.ok) {
+      localStorage.removeItem("nd_active");
+      return false;
+    }
+    state.mode = "online";
+    state.playerId = playerId;
+    applyRoom(data.room, { silent: true });
+    subscribeRoom(code);
+    render();
+    return true;
+  } catch {
+    state.reconnecting = false;
+    return false;
+  }
 }
 
 function render() {
+  applyTheme();
   if (state.screen === "home") return renderHome();
   if (!state.room) return renderHome();
   if (state.room.status === "waiting") return renderLobby();
@@ -147,21 +282,53 @@ function render() {
   return renderHome();
 }
 
+function settingsBar() {
+  return `
+    <div class="settings-bar">
+      <button class="chip ${state.muted ? "on" : ""}" id="muteBtn" type="button">${state.muted ? "صوت: مكتوم" : "صوت: شغال"}</button>
+      <div class="theme-row">
+        ${THEMES.map(
+          (t) =>
+            `<button type="button" class="chip ${state.theme === t.id ? "on" : ""}" data-theme="${t.id}">${t.label}</button>`
+        ).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function bindSettings() {
+  const mute = document.getElementById("muteBtn");
+  if (mute) {
+    mute.onclick = () => {
+      state.muted = !state.muted;
+      localStorage.setItem("nd_muted", state.muted ? "1" : "0");
+      if (!state.muted) beep(600, 0.06);
+      render();
+    };
+  }
+  document.querySelectorAll("[data-theme]").forEach((btn) => {
+    btn.onclick = () => {
+      state.theme = btn.dataset.theme;
+      applyTheme();
+      render();
+    };
+  });
+}
+
 function infoOverlay() {
   if (!state.infoOpen) return "";
   return `
-    <div class="info-overlay" id="infoOverlay" role="dialog" aria-modal="true" aria-label="شرح اللعبة">
+    <div class="info-overlay" id="infoOverlay" role="dialog" aria-modal="true">
       <div class="info-sheet">
         <button class="tracker-close" id="infoClose" type="button" aria-label="إغلاق">×</button>
         <h2 class="tracker-title">كيف تلعب؟</h2>
         <div class="info-body">
-          <p><strong>فكرة اللعبة</strong><br />مبارزة بين شخصين. كل واحد يختار رقم سري من ٤ خانات، والاثنين يحاولون يخمنون رقم بعض بالدور.</p>
-          <p><strong>١) إنشاء غرفة أو الانضمام</strong><br />واحد ينشئ غرفة ويشارك الكود أو الرابط، والثاني يدخل بنفس الكود.</p>
-          <p><strong>٢) اختيار الرقم السري</strong><br />كل لاعب يكتب ٤ أرقام من ٠ إلى ٩ ويثبّتها. التكرار بين الأرقام مسموح (مثل 1123)، لكن ممنوع تكرار نفس الرقم في كل الخانات الأربع مثل 0000 أو 1111.</p>
-          <p><strong>٣) التخمين بالدور</strong><br />لما يبدأ الدور، تكتب تخمينك لرقم الخصم. يطلعلك فقط كم رقم طلع صح في خانته الصحيحة. ما يظهر لك أرقام الخصم ولا تخميناته.</p>
-          <p><strong>٤) الفوز</strong><br />أول واحد يخمن الـ ٤ أرقام كلها في أماكنها الصحيحة يفوز.</p>
-          <p><strong>زر القائمة</strong><br />تقدر تفتح قائمة تعليم عشان تعلّم أرقام بـ X أحمر وتساعدك تتذكر وش استبعدت. العلامات تنحفظ لنفس الجولة وتتصفر مع لعبة جديدة.</p>
-          <p><strong>رقمك فوق</strong><br />بعد ما تثبّت رقمك، يبقى ظاهر لك فوق الشاشة عشان ما تنساه، وما أحد غيرك يشوفه.</p>
+          <p><strong>فكرة اللعبة</strong><br />كل لاعب يختار رقم سري، وتتناوبون على تخمين رقم الخصم.</p>
+          <p><strong>الصعوبة</strong><br />سهل ٣ أرقام، متوسط ٤، صعب ٥. ممنوع تكرار نفس الرقم في كل الخانات.</p>
+          <p><strong>النتيجة</strong><br />بعد كل تخمين يطلع لك فقط عدد الخانات الصحيحة في مكانها.</p>
+          <p><strong>التلميح</strong><br />مرة واحدة بالجولة: يكشف أي خانة من آخر تخمينك كانت صحيحة بدون ما يقول الرقم.</p>
+          <p><strong>ضد الكمبيوتر</strong><br />تقدر تلعب لوحدك إذا ما لقيت خصم.</p>
+          <p><strong>بعد النهاية</strong><br />ينكشف رقم الخصم عشان تتأكدون.</p>
         </div>
       </div>
     </div>
@@ -170,27 +337,14 @@ function infoOverlay() {
 
 function bindInfo() {
   const openBtn = document.getElementById("infoBtn");
-  if (openBtn) {
-    openBtn.onclick = () => {
-      state.infoOpen = true;
-      render();
-    };
-  }
+  if (openBtn) openBtn.onclick = () => { state.infoOpen = true; render(); };
   const closeBtn = document.getElementById("infoClose");
-  if (closeBtn) {
-    closeBtn.onclick = () => {
-      state.infoOpen = false;
-      render();
-    };
-  }
+  if (closeBtn) closeBtn.onclick = () => { state.infoOpen = false; render(); };
   const overlay = document.getElementById("infoOverlay");
   if (overlay) {
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) {
-        state.infoOpen = false;
-        render();
-      }
-    });
+    overlay.onclick = (e) => {
+      if (e.target === overlay) { state.infoOpen = false; render(); }
+    };
   }
 }
 
@@ -198,85 +352,148 @@ function renderHome() {
   app.innerHTML = `
     <section class="screen">
       <div class="home-top">
-        <button class="info-btn" id="infoBtn" type="button" aria-label="معلومات اللعبة">معلومات</button>
+        <button class="info-btn" id="infoBtn" type="button">معلومات</button>
       </div>
       <div>
         <h1 class="brand">مبارزة<br /><span>الأرقام</span></h1>
-        <p class="lede">كل واحد يختار ٤ أرقام سرية، وتتحدون تخمين أرقام بعض على جوالات مختلفة.</p>
+        <p class="lede">تحدّى صاحبك أونلاين، أو العب ضد الكمبيوتر.</p>
       </div>
+      ${settingsBar()}
       <div class="panel stack">
         <div>
           <label for="name">اسمك</label>
           <input id="name" maxlength="20" placeholder="مثلاً: قاسم" value="${escapeHtml(state.name)}" />
         </div>
+        <div>
+          <label>الصعوبة</label>
+          <div class="diff-row">
+            ${DIFFS.map(
+              (d) => `
+              <button type="button" class="diff-btn ${state.digitCount === d.id ? "on" : ""}" data-diff="${d.id}">
+                <strong>${d.label}</strong>
+                <span>${d.meta}</span>
+              </button>`
+            ).join("")}
+          </div>
+        </div>
         ${state.error ? `<p class="error">${escapeHtml(state.error)}</p>` : ""}
+        ${state.reconnecting ? `<p class="hint">جارٍ استرجاع جلستك...</p>` : ""}
         <button class="btn btn-primary" id="createBtn" ${state.busy ? "disabled" : ""}>إنشاء غرفة</button>
+        <button class="btn btn-ai" id="aiBtn" ${state.busy ? "disabled" : ""}>العب ضد الكمبيوتر</button>
         <div class="row">
           <input id="joinCode" class="digits" maxlength="5" placeholder="الكود" value="${escapeHtml(state.joinCode)}" style="letter-spacing:0.2em;font-size:1.3rem" />
           <button class="btn btn-sky" id="joinBtn" ${state.busy ? "disabled" : ""}>انضم</button>
         </div>
-        <p class="hint">شارك كود الغرفة مع صاحبك ويلعبون من أي جهازين على الإنترنت.</p>
       </div>
     </section>
     ${infoOverlay()}
   `;
 
-  const nameInput = document.getElementById("name");
-  nameInput.addEventListener("input", (e) => {
+  document.getElementById("name").oninput = (e) => {
     state.name = e.target.value;
     localStorage.setItem("nd_name", state.name);
-  });
-
-  document.getElementById("joinCode").addEventListener("input", (e) => {
+  };
+  document.getElementById("joinCode").oninput = (e) => {
     state.joinCode = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
     e.target.value = state.joinCode;
+  };
+  document.querySelectorAll("[data-diff]").forEach((btn) => {
+    btn.onclick = () => {
+      state.digitCount = Number(btn.dataset.diff);
+      localStorage.setItem("nd_digits", String(state.digitCount));
+      render();
+    };
   });
-
   document.getElementById("createBtn").onclick = createRoom;
   document.getElementById("joinBtn").onclick = joinRoom;
+  document.getElementById("aiBtn").onclick = startAiGame;
   bindInfo();
+  bindSettings();
 }
 
 function roomHeader() {
+  const d = digitCount();
+  const diff = DIFFS.find((x) => x.id === d);
   return `
     <div class="topbar">
       <div class="pill">الغرفة <strong>${escapeHtml(state.room.code)}</strong></div>
       <div class="topbar-actions">
         <button class="btn btn-ghost copy-btn info-gap" id="infoBtn" type="button">معلومات</button>
         <button class="btn btn-ghost copy-btn" id="trackerBtn" type="button">القائمة</button>
-        <button class="btn btn-ghost copy-btn" id="copyCode" type="button">نسخ الرابط</button>
+        ${state.mode === "online" ? `<button class="btn btn-ghost copy-btn" id="copyCode" type="button">نسخ الرابط</button>` : ""}
       </div>
+    </div>
+    <div class="meta-strip">
+      <span>الصعوبة: ${diff?.label || ""} (${d})</span>
+      ${state.room.status === "playing" || state.room.status === "finished" ? `<span>الدور رقم ${state.room.turnNumber || 1}</span>` : ""}
     </div>
   `;
 }
 
-function trackerCellKey(digit, slot) {
-  return `${digit}-${slot}`;
+function inviteBlock() {
+  if (state.mode !== "online" || !state.room?.code) return "";
+  const text = encodeURIComponent(inviteText());
+  const wa = `https://wa.me/?text=${text}`;
+  return `
+    <div class="panel stack invite-box">
+      <p class="hint">ادعُ صاحبك:</p>
+      <div class="row">
+        <a class="btn btn-wa" id="waBtn" href="${wa}" target="_blank" rel="noopener">واتساب</a>
+        <button class="btn btn-snap" id="snapBtn" type="button">سناب</button>
+      </div>
+      <p class="hint tiny">السناب يجهز لك النص عشان تلصقه بالشات.</p>
+    </div>
+  `;
+}
+
+function bindInvites() {
+  const snap = document.getElementById("snapBtn");
+  if (snap) {
+    snap.onclick = async () => {
+      const text = inviteText();
+      try {
+        if (navigator.share) {
+          await navigator.share({ text, url: inviteUrl(), title: "مبارزة الأرقام" });
+        } else {
+          await navigator.clipboard.writeText(text);
+          snap.textContent = "تم النسخ";
+          setTimeout(() => { snap.textContent = "سناب"; }, 1400);
+        }
+      } catch {
+        try {
+          await navigator.clipboard.writeText(text);
+          snap.textContent = "تم النسخ";
+          setTimeout(() => { snap.textContent = "سناب"; }, 1400);
+        } catch {
+          prompt("انسخ الدعوة:", text);
+        }
+      }
+    };
+  }
 }
 
 function trackerOverlay() {
   if (!state.trackerOpen) return "";
-  const rows = Array.from({ length: 10 }, (_, digit) => {
-    const cells = [0, 1, 2, 3]
-      .map((slot) => {
-        const key = trackerCellKey(digit, slot);
-        const crossed = state.crossed.has(key);
-        return `
-          <button type="button" class="tracker-cell ${crossed ? "crossed" : ""}" data-key="${key}" aria-label="${digit}">
-            <span>${digit}</span>
-            ${crossed ? '<i class="tracker-x" aria-hidden="true">✕</i>' : ""}
-          </button>`;
-      })
-      .join("");
-    return `<div class="tracker-row">${cells}</div>`;
+  const digits = 10;
+  const slots = digitCount();
+  const rows = Array.from({ length: digits }, (_, digit) => {
+    const cells = Array.from({ length: slots }, (_, slot) => {
+      const key = `${digit}-${slot}`;
+      const crossed = state.crossed.has(key);
+      return `
+        <button type="button" class="tracker-cell ${crossed ? "crossed" : ""}" data-key="${key}">
+          <span>${digit}</span>
+          ${crossed ? '<i class="tracker-x" aria-hidden="true">✕</i>' : ""}
+        </button>`;
+    }).join("");
+    return `<div class="tracker-row" style="grid-template-columns:repeat(${slots},1fr)">${cells}</div>`;
   }).join("");
-
   return `
-    <div class="tracker-overlay" id="trackerOverlay" role="dialog" aria-modal="true" aria-label="قائمة الأرقام">
+    <div class="tracker-overlay" id="trackerOverlay" role="dialog" aria-modal="true">
       <div class="tracker-sheet">
-        <button class="tracker-close" id="trackerClose" type="button" aria-label="إغلاق">×</button>
+        <button class="tracker-close" id="trackerClose" type="button">×</button>
         <h2 class="tracker-title">علّم الأرقام</h2>
-        <p class="tracker-hint">اضغط الرقم لحاله عشان تحط عليه X</p>
+        <p class="tracker-hint">اضغط خانة لحط X أحمر</p>
         <div class="tracker-grid">${rows}</div>
       </div>
     </div>
@@ -285,32 +502,11 @@ function trackerOverlay() {
 
 function bindTracker() {
   const openBtn = document.getElementById("trackerBtn");
-  if (openBtn) {
-    openBtn.onclick = () => {
-      ensureTrackerForRoom();
-      state.trackerOpen = true;
-      render();
-    };
-  }
-
+  if (openBtn) openBtn.onclick = () => { ensureTrackerForRoom(); state.trackerOpen = true; render(); };
   const closeBtn = document.getElementById("trackerClose");
-  if (closeBtn) {
-    closeBtn.onclick = () => {
-      state.trackerOpen = false;
-      render();
-    };
-  }
-
+  if (closeBtn) closeBtn.onclick = () => { state.trackerOpen = false; render(); };
   const overlay = document.getElementById("trackerOverlay");
-  if (overlay) {
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) {
-        state.trackerOpen = false;
-        render();
-      }
-    });
-  }
-
+  if (overlay) overlay.onclick = (e) => { if (e.target === overlay) { state.trackerOpen = false; render(); } };
   document.querySelectorAll(".tracker-cell").forEach((btn) => {
     btn.onclick = () => {
       const key = btn.dataset.key;
@@ -325,15 +521,12 @@ function bindCopy() {
   const btn = document.getElementById("copyCode");
   if (!btn) return;
   btn.onclick = async () => {
-    const url = `${location.origin}${location.pathname}?code=${state.room.code}`;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(inviteUrl());
       btn.textContent = "تم النسخ";
-      setTimeout(() => {
-        btn.textContent = "نسخ الرابط";
-      }, 1500);
+      setTimeout(() => { btn.textContent = "نسخ الرابط"; }, 1400);
     } catch {
-      prompt("انسخ الرابط:", url);
+      prompt("انسخ الرابط:", inviteUrl());
     }
   };
 }
@@ -342,6 +535,8 @@ function bindRoomChrome() {
   bindCopy();
   bindTracker();
   bindInfo();
+  bindInvites();
+  bindSettings();
 }
 
 function playersBlock() {
@@ -358,7 +553,7 @@ function playersBlock() {
         .join("")}
       ${
         state.room.players.length < 2
-          ? `<div class="player-card"><div class="name">بانتظار خصم</div><div class="meta waiting-dots">يكتب الكود</div></div>`
+          ? `<div class="player-card"><div class="name">بانتظار خصم</div><div class="meta waiting-dots">ادعُه من تحت</div></div>`
           : ""
       }
     </div>
@@ -378,28 +573,27 @@ function mySecretBar() {
 
 function digitPad(draftKey, submitLabel) {
   const draft = state[draftKey];
+  const need = digitCount();
   return `
     <div class="panel stack">
       <div>
-        <label>الأرقام</label>
-        <input class="digits" id="draftView" readonly value="${escapeHtml(draft)}" placeholder="••••" />
+        <label>الأرقام (${need})</label>
+        <input class="digits" id="draftView" readonly value="${escapeHtml(draft)}" placeholder="${"•".repeat(need)}" />
       </div>
       <div class="digit-pad" id="pad">
-        ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-          .map((d) => `<button type="button" data-d="${d}">${d}</button>`)
-          .join("")}
+        ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button type="button" data-d="${d}">${d}</button>`).join("")}
         <button type="button" class="action" data-act="del">⌫</button>
         <button type="button" class="action" data-act="clr">مسح</button>
       </div>
       ${state.error ? `<p class="error">${escapeHtml(state.error)}</p>` : ""}
-      <button class="btn btn-primary" id="submitDraft" ${state.busy || draft.length !== 4 ? "disabled" : ""}>${submitLabel}</button>
+      <button class="btn btn-primary" id="submitDraft" ${state.busy || draft.length !== need ? "disabled" : ""}>${submitLabel}</button>
     </div>
   `;
 }
 
 function bindDigitPad(draftKey, onSubmit) {
-  const pad = document.getElementById("pad");
-  pad.addEventListener("click", (e) => {
+  const need = digitCount();
+  document.getElementById("pad").onclick = (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
     if (btn.dataset.act === "del") {
@@ -414,37 +608,45 @@ function bindDigitPad(draftKey, onSubmit) {
       render();
       return;
     }
-    const d = btn.dataset.d;
-    if (d == null) return;
-    if (state[draftKey].length >= 4) return;
-    state[draftKey] += d;
+    if (btn.dataset.d == null) return;
+    if (state[draftKey].length >= need) return;
+    state[draftKey] += btn.dataset.d;
     state.error = "";
     render();
-  });
+  };
   document.getElementById("submitDraft").onclick = onSubmit;
 }
 
 function historyBlock() {
   const guesses = [...(state.room.guesses || [])].reverse();
   if (!guesses.length) {
-    return `<div class="panel"><p class="hint">ما فيه تخمينات لك بعد. ابدأ أول ضربة!</p></div>`;
+    return `<div class="panel"><p class="hint">ما فيه تخمينات لك بعد.</p></div>`;
   }
   return `
     <div class="history">
       ${guesses
         .map(
-          (g) => `
-            <div class="guess-row">
-              <div class="num">${escapeHtml(g.guess)}</div>
-              <div class="score">
-                <span class="badge pos" title="في الخانة الصحيحة">${g.correctPositions} صح</span>
-              </div>
-            </div>`
+          (g, idx) => `
+        <div class="guess-row">
+          <div class="who">#${guesses.length - idx}</div>
+          <div class="num">${escapeHtml(g.guess)}</div>
+          <div class="score"><span class="badge pos">${g.correctPositions} صح</span></div>
+        </div>`
         )
         .join("")}
     </div>
-    <div class="legend">
-      <span>الرقم = كم خانة صحيحة في مكانها فقط</span>
+  `;
+}
+
+function turnBanner() {
+  if (state.room.status !== "playing") return "";
+  const myTurn = state.room.turn === state.playerId;
+  const n = state.room.turnNumber || 1;
+  const mine = (state.room.myGuessCount || 0) + (myTurn ? 1 : 0);
+  return `
+    <div class="turn-banner ${myTurn ? "you" : "them"}">
+      <div class="turn-main">${myTurn ? "دورك الآن" : `دور ${escapeHtml(opponent()?.name || "الخصم")}`}</div>
+      <div class="turn-sub">الدور رقم ${n} · تخمينك رقم ${Math.max(1, mine)}</div>
     </div>
   `;
 }
@@ -456,13 +658,10 @@ function renderLobby() {
       ${roomHeader()}
       <p class="status-line">بانتظار انضمام الخصم<span class="waiting-dots"></span></p>
       ${playersBlock()}
-      <div class="panel stack">
-        <p class="hint">أعطِ صاحبك هذا الكود: <strong style="color:var(--lime);font-family:var(--num);letter-spacing:.15em">${escapeHtml(state.room.code)}</strong></p>
-        <p class="hint">أو انسخ رابط الدعوة وابعثه له مباشرة.</p>
-      </div>
+      ${inviteBlock()}
+      ${settingsBar()}
     </section>
-    ${trackerOverlay()}
-    ${infoOverlay()}
+    ${trackerOverlay()}${infoOverlay()}
   `;
   bindRoomChrome();
 }
@@ -474,17 +673,17 @@ function renderSetup() {
     <section class="screen">
       ${roomHeader()}
       ${mySecretBar()}
-      <p class="status-line">${self?.ready ? "تم تثبيت رقمك. بانتظار الخصم..." : "اختر ٤ أرقام وثبّتها"}</p>
+      <p class="status-line">${self?.ready ? "تم تثبيت رقمك. بانتظار الخصم..." : `اختر ${digitCount()} أرقام وثبّتها`}</p>
       ${playersBlock()}
       ${
         self?.ready
-          ? `<div class="panel"><p class="hint">رقمك السري محفوظ فوق. ما أحد يشوفه غيرك. لما الخصم يثبت رقمه تبدأ المبارزة.</p></div>`
+          ? `<div class="panel"><p class="hint">رقمك محفوظ فوق. ما أحد يشوفه غيرك.</p></div>`
           : `${digitPad("secretDraft", "تثبيت الرقم")}
-             <p class="hint">٤ أرقام من ٠ إلى ٩، والتكرار الجزئي مسموح (مثل 1123)، لكن ممنوع 1111 أو أي رقم متكرر بالكامل.</p>`
+             <p class="hint">ممنوع تكرار نفس الرقم في كل الخانات (مثل ${"1".repeat(digitCount())}).</p>`
       }
+      ${state.mode === "online" ? inviteBlock() : ""}
     </section>
-    ${trackerOverlay()}
-    ${infoOverlay()}
+    ${trackerOverlay()}${infoOverlay()}
   `;
   bindRoomChrome();
   if (!self?.ready) bindDigitPad("secretDraft", setSecret);
@@ -493,27 +692,31 @@ function renderSetup() {
 function renderPlay() {
   ensureTrackerForRoom();
   const myTurn = state.room.turn === state.playerId;
-  const opp = opponent();
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
       ${mySecretBar()}
-      <p class="status-line ${myTurn ? "turn-you" : "turn-them"}">
-        ${myTurn ? "دورك — خمّن رقم الخصم" : `دور ${escapeHtml(opp?.name || "الخصم")}...`}
-      </p>
+      ${turnBanner()}
       ${playersBlock()}
       ${
         myTurn
-          ? digitPad("guessDraft", "أرسل التخمين")
-          : `<div class="panel"><p class="hint waiting-dots">انتظر تخمين الخصم</p></div>`
+          ? `${digitPad("guessDraft", "أرسل التخمين")}
+             <button class="btn btn-ghost" id="hintBtn" ${state.busy || state.room.hintUsed ? "disabled" : ""}>
+               ${state.room.hintUsed ? "تم استخدام التلميح" : "تلميح (مرة واحدة)"}
+             </button>
+             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}`
+          : `<div class="panel"><p class="hint waiting-dots">انتظر تخمين الخصم</p>
+             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}</div>`
       }
       ${historyBlock()}
+      ${settingsBar()}
     </section>
-    ${trackerOverlay()}
-    ${infoOverlay()}
+    ${trackerOverlay()}${infoOverlay()}
   `;
   bindRoomChrome();
   if (myTurn) bindDigitPad("guessDraft", sendGuess);
+  const hintBtn = document.getElementById("hintBtn");
+  if (hintBtn) hintBtn.onclick = useHint;
 }
 
 function renderFinished() {
@@ -527,46 +730,59 @@ function renderFinished() {
       <div class="win-box">
         <h2>${won ? "فزت 🔥" : "انتهت الجولة"}</h2>
         <p>${won ? "خمّنت رقم الخصم صح!" : `${escapeHtml(winnerName)} خمّن رقمك.`}</p>
+        ${
+          state.room.opponentSecret
+            ? `<p class="reveal">رقم الخصم كان: <strong>${escapeHtml(state.room.opponentSecret)}</strong></p>`
+            : ""
+        }
         <button class="btn btn-primary" id="rematchBtn" ${state.busy ? "disabled" : ""}>إعادة المبارزة</button>
       </div>
       ${historyBlock()}
       <button class="btn btn-ghost" id="homeBtn">القائمة الرئيسية</button>
+      ${settingsBar()}
     </section>
-    ${trackerOverlay()}
-    ${infoOverlay()}
+    ${trackerOverlay()}${infoOverlay()}
   `;
   bindRoomChrome();
   document.getElementById("rematchBtn").onclick = rematch;
-  document.getElementById("homeBtn").onclick = () => {
-    if (roomChannel) {
-      sb.removeChannel(roomChannel);
-      roomChannel = null;
-    }
-    clearTracker();
-    state.infoOpen = false;
-    state.room = null;
-    state.playerId = null;
-    state.screen = "home";
-    state.secretDraft = "";
-    state.guessDraft = "";
-    state.error = "";
-    location.href = location.pathname;
-  };
+  document.getElementById("homeBtn").onclick = goHome;
+}
+
+function goHome() {
+  if (roomChannel) {
+    sb.removeChannel(roomChannel);
+    roomChannel = null;
+  }
+  clearTracker();
+  localStorage.removeItem("nd_active");
+  state.infoOpen = false;
+  state.room = null;
+  state.playerId = null;
+  state.mode = "online";
+  state.aiSecret = null;
+  state.screen = "home";
+  state.secretDraft = "";
+  state.guessDraft = "";
+  state.error = "";
+  location.href = location.pathname;
 }
 
 async function createRoom() {
   const name = state.name.trim() || "لاعب 1";
   setBusy(true);
   setError("");
-  const { data, error } = await sb.rpc("nd_create_room", { p_name: name });
+  const { data, error } = await sb.rpc("nd_create_room", {
+    p_name: name,
+    p_digit_count: state.digitCount,
+  });
   setBusy(false);
   if (error) return setError(error.message || "فشل إنشاء الغرفة");
   if (!data?.ok) return setError(data?.error || "فشل إنشاء الغرفة");
   clearTracker();
+  state.mode = "online";
   state.playerId = data.playerId;
-  savePlayerId(data.room.code, data.playerId);
   state.trackerGameKey = data.room.code;
-  applyRoom(data.room);
+  applyRoom(data.room, { silent: true });
   subscribeRoom(data.room.code);
   render();
 }
@@ -577,25 +793,82 @@ async function joinRoom() {
   if (!code) return setError("اكتب كود الغرفة");
   setBusy(true);
   setError("");
-  const { data, error } = await sb.rpc("nd_join_room", {
-    p_code: code,
-    p_name: name,
-  });
+  const { data, error } = await sb.rpc("nd_join_room", { p_code: code, p_name: name });
   setBusy(false);
   if (error) return setError(error.message || "فشل الانضمام");
   if (!data?.ok) return setError(data?.error || "فشل الانضمام");
   clearTracker();
+  state.mode = "online";
   state.playerId = data.playerId;
-  savePlayerId(data.room.code, data.playerId);
+  state.digitCount = data.room.digitCount || 4;
   state.trackerGameKey = data.room.code;
-  applyRoom(data.room);
+  applyRoom(data.room, { silent: true });
   subscribeRoom(data.room.code);
   render();
+}
+
+function startAiGame() {
+  const digits = state.digitCount;
+  const myId = "human";
+  const aiId = state.aiPlayerId;
+  const name = state.name.trim() || "أنت";
+  state.mode = "ai";
+  state.playerId = myId;
+  state.aiSecret = randomSecret(digits);
+  clearTracker();
+  state.trackerGameKey = "ai";
+  state.room = {
+    code: "AI",
+    status: "setup",
+    turn: null,
+    winner: null,
+    digitCount: digits,
+    hintUsed: false,
+    vsAi: true,
+    turnNumber: 1,
+    myGuessCount: 0,
+    mySecret: null,
+    opponentSecret: null,
+    guesses: [],
+    players: [
+      { id: myId, name, ready: false, isYou: true, hasSecret: false },
+      { id: aiId, name: "الكمبيوتر", ready: true, isYou: false, hasSecret: true },
+    ],
+  };
+  state.screen = "setup";
+  state.secretDraft = "";
+  state.guessDraft = "";
+  localStorage.removeItem("nd_active");
+  render();
+}
+
+function aiPublicRoomPatch(extra = {}) {
+  Object.assign(state.room, extra);
+  const myGuesses = (state.room._allGuesses || []).filter((g) => g.by === state.playerId);
+  state.room.guesses = myGuesses.map(({ guess, correctPositions }) => ({ guess, correctPositions }));
+  state.room.myGuessCount = myGuesses.length;
+  state.room.turnNumber = Math.max(1, Math.floor((state.room._allGuesses || []).length / 2) + 1);
 }
 
 async function setSecret() {
   const check = isValidNumber(state.secretDraft);
   if (!check.ok) return setError(check.error);
+
+  if (state.mode === "ai") {
+    state.room.mySecret = state.secretDraft;
+    state.room.players = state.room.players.map((p) =>
+      p.isYou ? { ...p, ready: true, hasSecret: true } : p
+    );
+    state.room.status = "playing";
+    state.room.turn = Math.random() < 0.5 ? state.playerId : state.aiPlayerId;
+    state.room._allGuesses = [];
+    state.secretDraft = "";
+    applyRoom(state.room);
+    render();
+    if (state.room.turn === state.aiPlayerId) setTimeout(aiTakeTurn, 650);
+    return;
+  }
+
   setBusy(true);
   setError("");
   const { data, error } = await sb.rpc("nd_set_secret", {
@@ -611,9 +884,59 @@ async function setSecret() {
   render();
 }
 
+function aiTakeTurn() {
+  if (state.mode !== "ai" || state.room?.status !== "playing") return;
+  if (state.room.turn !== state.aiPlayerId) return;
+  const digits = digitCount();
+  let guess;
+  do {
+    guess = randomSecret(digits);
+  } while ((state.room._allGuesses || []).some((g) => g.by === state.aiPlayerId && g.guess === guess));
+  const correct = scoreGuess(state.room.mySecret, guess);
+  state.room._allGuesses.push({ by: state.aiPlayerId, guess, correctPositions: correct });
+  soundGuess(correct, digits);
+  if (correct === digits) {
+    state.room.status = "finished";
+    state.room.winner = state.aiPlayerId;
+    state.room.turn = null;
+    state.room.opponentSecret = state.aiSecret;
+  } else {
+    state.room.turn = state.playerId;
+  }
+  aiPublicRoomPatch();
+  applyRoom(state.room);
+  render();
+}
+
 async function sendGuess() {
   const check = isValidNumber(state.guessDraft);
   if (!check.ok) return setError(check.error);
+
+  if (state.mode === "ai") {
+    const guess = state.guessDraft;
+    const correct = scoreGuess(state.aiSecret, guess);
+    state.room._allGuesses = state.room._allGuesses || [];
+    state.room._allGuesses.push({ by: state.playerId, guess, correctPositions: correct });
+    soundGuess(correct, digitCount());
+    state.guessDraft = "";
+    if (correct === digitCount()) {
+      state.room.status = "finished";
+      state.room.winner = state.playerId;
+      state.room.turn = null;
+      state.room.opponentSecret = state.aiSecret;
+      aiPublicRoomPatch();
+      applyRoom(state.room);
+      render();
+      return;
+    }
+    state.room.turn = state.aiPlayerId;
+    aiPublicRoomPatch();
+    applyRoom(state.room);
+    render();
+    setTimeout(aiTakeTurn, 700);
+    return;
+  }
+
   setBusy(true);
   setError("");
   const { data, error } = await sb.rpc("nd_guess", {
@@ -624,12 +947,51 @@ async function sendGuess() {
   setBusy(false);
   if (error) return setError(error.message || "فشل التخمين");
   if (!data?.ok) return setError(data?.error || "فشل التخمين");
+  soundGuess(data.correctPositions || 0, digitCount());
   state.guessDraft = "";
-  applyRoom(data.room);
+  applyRoom(data.room, { silent: true });
+  render();
+}
+
+async function useHint() {
+  if (state.mode === "ai") {
+    if (state.room.hintUsed) return setError("استخدمت التلميح مسبقاً");
+    const mine = (state.room._allGuesses || []).filter((g) => g.by === state.playerId);
+    const last = mine[mine.length - 1];
+    if (!last) return setError("خمّن مرة أولاً بعدين استخدم التلميح");
+    if (!last.correctPositions) return setError("آخر تخمين ما فيه أي خانة صحيحة");
+    const positions = [];
+    for (let i = 0; i < last.guess.length; i++) {
+      if (last.guess[i] === state.aiSecret[i]) positions.push(i + 1);
+    }
+    const pick = positions[Math.floor(Math.random() * positions.length)];
+    state.room.hintUsed = true;
+    state.lastHint = `الخانة رقم ${pick} من آخر تخمينك صحيحة (بدون كشف الرقم)`;
+    beep(700, 0.1, "triangle");
+    render();
+    return;
+  }
+
+  setBusy(true);
+  setError("");
+  const { data, error } = await sb.rpc("nd_use_hint", {
+    p_code: state.room.code,
+    p_player_id: state.playerId,
+  });
+  setBusy(false);
+  if (error) return setError(error.message || "فشل التلميح");
+  if (!data?.ok) return setError(data?.error || "فشل التلميح");
+  state.lastHint = data.message || "";
+  beep(700, 0.1, "triangle");
+  applyRoom(data.room, { silent: true });
   render();
 }
 
 async function rematch() {
+  if (state.mode === "ai") {
+    startAiGame();
+    return;
+  }
   setBusy(true);
   const { data, error } = await sb.rpc("nd_rematch", {
     p_code: state.room.code,
@@ -640,15 +1002,33 @@ async function rematch() {
   if (!data?.ok) return setError(data?.error || "فشل إعادة اللعب");
   state.crossed = new Set();
   state.trackerOpen = false;
+  state.lastHint = "";
   state.secretDraft = "";
   state.guessDraft = "";
-  applyRoom(data.room);
+  applyRoom(data.room, { silent: true });
   render();
 }
 
-(async function bootFromQuery() {
+window.addEventListener("online", () => {
+  if (state.mode === "online" && state.room?.code) {
+    subscribeRoom(state.room.code);
+    refreshRoom();
+  } else {
+    tryReconnect();
+  }
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.mode === "online" && state.room?.code) {
+    refreshRoom();
+  }
+});
+
+(async function boot() {
+  applyTheme();
   const params = new URLSearchParams(location.search);
   const code = (params.get("code") || "").toUpperCase().slice(0, 5);
   if (code) state.joinCode = code;
-  render();
+  const restored = await tryReconnect();
+  if (!restored) render();
 })();

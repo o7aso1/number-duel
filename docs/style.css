@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="classic"] {
   --ink: #e8f5ef;
   --muted: #9bb8ab;
   --deep: #071511;
@@ -12,6 +13,47 @@
   --radius: 22px;
   --font: "IBM Plex Sans Arabic", sans-serif;
   --num: "Space Grotesk", "IBM Plex Sans Arabic", sans-serif;
+  --bg1: rgba(184, 243, 74, 0.18);
+  --bg2: rgba(90, 215, 255, 0.14);
+  --bg3: #0b1f1a;
+  --bg4: #071511;
+  --bg5: #10261f;
+}
+
+:root[data-theme="day"] {
+  --ink: #163028;
+  --muted: #5d7369;
+  --deep: #eef6f1;
+  --panel: rgba(255, 255, 255, 0.82);
+  --line: rgba(22, 48, 40, 0.12);
+  --lime: #1f8f4e;
+  --lime-dim: #167a40;
+  --coral: #d4553a;
+  --sky: #1a8fb8;
+  --shadow: 0 18px 40px rgba(22, 48, 40, 0.12);
+  --bg1: rgba(31, 143, 78, 0.12);
+  --bg2: rgba(26, 143, 184, 0.1);
+  --bg3: #f4fbf7;
+  --bg4: #e7f3ec;
+  --bg5: #dff0e7;
+}
+
+:root[data-theme="ramadan"] {
+  --ink: #fff6e8;
+  --muted: #d2b48c;
+  --deep: #140e08;
+  --panel: rgba(42, 24, 12, 0.82);
+  --line: rgba(232, 185, 92, 0.22);
+  --lime: #e8b95c;
+  --lime-dim: #c4923a;
+  --coral: #ff7a59;
+  --sky: #7ec8ff;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  --bg1: rgba(232, 185, 92, 0.16);
+  --bg2: rgba(80, 140, 90, 0.14);
+  --bg3: #1a120a;
+  --bg4: #120c07;
+  --bg5: #24180f;
 }
 
 * {
@@ -37,9 +79,9 @@ body {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(184, 243, 74, 0.18), transparent 55%),
-    radial-gradient(ellipse 70% 45% at 90% 80%, rgba(90, 215, 255, 0.14), transparent 50%),
-    linear-gradient(165deg, #0b1f1a 0%, #071511 45%, #10261f 100%);
+    radial-gradient(ellipse 80% 50% at 20% 10%, var(--bg1), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 90% 80%, var(--bg2), transparent 50%),
+    linear-gradient(165deg, var(--bg3) 0%, var(--bg4) 45%, var(--bg5) 100%);
 }
 
 .bg::after {
@@ -668,6 +710,160 @@ input.digits {
 .copy-btn {
   font-size: 0.85rem;
   padding: 8px 12px;
+}
+
+.settings-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 2px;
+}
+
+.theme-row,
+.diff-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.chip,
+.diff-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--muted);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+:root[data-theme="day"] .chip,
+:root[data-theme="day"] .diff-btn {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.chip.on,
+.diff-btn.on {
+  color: var(--ink);
+  border-color: rgba(184, 243, 74, 0.45);
+  background: rgba(184, 243, 74, 0.14);
+}
+
+:root[data-theme="ramadan"] .chip.on,
+:root[data-theme="ramadan"] .diff-btn.on {
+  border-color: rgba(232, 185, 92, 0.5);
+  background: rgba(232, 185, 92, 0.14);
+}
+
+.diff-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+
+.diff-btn strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.diff-btn span {
+  font-size: 0.78rem;
+}
+
+.btn-ai {
+  background: transparent;
+  color: var(--ink);
+  border: 1px dashed var(--line);
+}
+
+.btn-wa {
+  background: #25d366;
+  color: #062816;
+  text-align: center;
+  text-decoration: none;
+}
+
+.btn-snap {
+  background: #fffc00;
+  color: #111;
+}
+
+.meta-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.turn-banner {
+  border-radius: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  animation: rise 0.35s ease both;
+}
+
+.turn-banner.you {
+  background: rgba(184, 243, 74, 0.14);
+  border-color: rgba(184, 243, 74, 0.4);
+}
+
+.turn-banner.them {
+  background: rgba(90, 215, 255, 0.1);
+  border-color: rgba(90, 215, 255, 0.28);
+}
+
+.turn-main {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.turn-banner.you .turn-main {
+  color: var(--lime);
+}
+
+.turn-banner.them .turn-main {
+  color: var(--sky);
+}
+
+.turn-sub {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hint-ok {
+  color: var(--lime) !important;
+}
+
+.reveal {
+  margin: 0 0 14px !important;
+}
+
+.reveal strong {
+  font-family: var(--num);
+  letter-spacing: 0.18em;
+  color: var(--lime);
+  direction: ltr;
+  display: inline-block;
+}
+
+.tiny {
+  font-size: 0.8rem !important;
+}
+
+.guess-row {
+  grid-template-columns: auto 1fr auto;
+}
+
+.guess-row .who {
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 1.8rem;
 }
 
 @media (min-width: 520px) {
