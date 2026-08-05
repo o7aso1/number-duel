@@ -17,6 +17,13 @@ const THEMES = [
   { id: "ramadan", label: "رمضاني" },
 ];
 
+const TIMER_OPTS = [
+  { id: 0, label: "بدون مؤقت" },
+  { id: 30, label: "٣٠ ث" },
+  { id: 45, label: "٤٥ ث" },
+  { id: 60, label: "٦٠ ث" },
+];
+
 const state = {
   screen: "home",
   name: localStorage.getItem("nd_name") || "",
@@ -34,19 +41,46 @@ const state = {
   digitCount: Number(localStorage.getItem("nd_digits") || 4),
   muted: localStorage.getItem("nd_muted") === "1",
   theme: localStorage.getItem("nd_theme") || "classic",
+  timerSec: Number(localStorage.getItem("nd_timer") || 0),
   mode: "online", // online | ai
   aiSecret: null,
   aiPlayerId: "ai-bot",
+  aiCandidates: [],
   lastHint: "",
   reconnecting: false,
+  presenceNote: "",
+  turnEndsAt: null,
+  timerLeft: 0,
+  tutorialStep: localStorage.getItem("nd_tutorial_done") === "1" ? null : 0,
+  streakHandledFor: null,
 };
 
 let roomChannel = null;
 let audioCtx = null;
 let prevTurn = null;
+let heartbeatTimer = null;
+let countdownTimer = null;
 
 function digitCount() {
   return state.room?.digitCount || state.digitCount || 4;
+}
+
+function getStreak() {
+  return Number(localStorage.getItem("nd_streak") || 0);
+}
+
+function getBestStreak() {
+  return Number(localStorage.getItem("nd_best_streak") || 0);
+}
+
+function recordResult(won) {
+  if (won) {
+    const next = getStreak() + 1;
+    localStorage.setItem("nd_streak", String(next));
+    if (next > getBestStreak()) localStorage.setItem("nd_best_streak", String(next));
+  } else {
+    localStorage.setItem("nd_streak", "0");
+  }
 }
 
 function isValidNumber(value, digits = digitCount()) {
@@ -71,6 +105,45 @@ function scoreGuess(secret, guess) {
   let n = 0;
   for (let i = 0; i < secret.length; i++) if (secret[i] === guess[i]) n++;
   return n;
+}
+
+function buildCandidates(digits) {
+  const out = [];
+  const max = 10 ** digits;
+  for (let i = 0; i < max; i++) {
+    const s = String(i).padStart(digits, "0");
+    if (s !== s[0].repeat(digits)) out.push(s);
+  }
+  return out;
+}
+
+function aiPickGuess() {
+  if (!state.aiCandidates.length) state.aiCandidates = buildCandidates(digitCount());
+  const pool = state.aiCandidates;
+  // فضّل تخمين يقلل الاحتمالات: عينة عشوائية من المرشحين
+  const sample = pool.length <= 40 ? pool : Array.from({ length: 40 }, () => pool[Math.floor(Math.random() * pool.length)]);
+  let best = sample[0];
+  let bestScore = Infinity;
+  for (const g of sample) {
+    const buckets = new Map();
+    const probe = pool.length <= 250 ? pool : Array.from({ length: 250 }, () => pool[Math.floor(Math.random() * pool.length)]);
+    for (const c of probe) {
+      const sc = scoreGuess(c, g);
+      buckets.set(sc, (buckets.get(sc) || 0) + 1);
+    }
+    const worst = Math.max(...buckets.values());
+    if (worst < bestScore) {
+      bestScore = worst;
+      best = g;
+    }
+  }
+  return best;
+}
+
+function aiLearn(guess, correct) {
+  state.aiCandidates = (state.aiCandidates.length ? state.aiCandidates : buildCandidates(digitCount())).filter(
+    (c) => scoreGuess(c, guess) === correct
+  );
 }
 
 function clearTracker() {
@@ -191,6 +264,7 @@ function inviteUrl() {
 function applyRoom(room, { silent } = {}) {
   const prevStatus = state.room?.status;
   const wasMyTurn = state.room?.turn === state.playerId;
+  const prevPresence = state.room?.opponentPresence;
   state.room = room;
   state.error = "";
   if (room.status === "waiting") state.screen = "lobby";
@@ -201,15 +275,162 @@ function applyRoom(room, { silent } = {}) {
     state.crossed = new Set();
     state.trackerOpen = false;
     state.lastHint = "";
+    state.streakHandledFor = null;
   }
+
+  // سلسلة الانتصارات
+  if (room.status === "finished" && prevStatus !== "finished") {
+    const key = `${room.code}:${room.winner}`;
+    if (state.streakHandledFor !== key) {
+      recordResult(room.winner === state.playerId);
+      state.streakHandledFor = key;
+    }
+  }
+
+  // رسائل حضور الخصم
+  if (room.opponentPresence === "left" || (prevStatus && prevStatus !== "waiting" && room.status === "waiting" && (room.players?.length || 0) < 2)) {
+    state.presenceNote = "الخصم طلع من الغرفة";
+  } else if (room.opponentPresence === "offline") {
+    state.presenceNote = "يبدو إن نت الخصم انقطع";
+  } else if (room.opponentPresence === "slow") {
+    state.presenceNote = "الخصم بطيء أو النت ضعيف... استنى شوي";
+  } else if (room.opponentPresence === "online") {
+    if (prevPresence === "slow" || prevPresence === "offline") state.presenceNote = "";
+    else if (state.presenceNote && state.presenceNote.includes("انقطع")) state.presenceNote = "";
+  }
+
   if (!silent && room.status === "playing" && room.turn === state.playerId && !wasMyTurn && prevTurn !== room.turn) {
     soundTurn();
   }
   if (!silent && room.status === "finished" && prevStatus !== "finished") {
     soundGuess(digitCount(), digitCount());
   }
+
+  const turnChanged = prevTurn !== room.turn || wasMyTurn !== (room.turn === state.playerId);
   prevTurn = room.turn;
+  if (room.status === "playing" && room.turn === state.playerId) {
+    if (turnChanged || !state.turnEndsAt) startTurnTimer();
+  } else {
+    stopTurnTimer();
+  }
   saveSession();
+  ensureHeartbeat();
+}
+
+function presenceBanner() {
+  if (state.mode !== "online" || !state.presenceNote) return "";
+  const kind = state.room?.opponentPresence || "slow";
+  return `<div class="presence-banner ${escapeHtml(kind)}">${escapeHtml(state.presenceNote)}</div>`;
+}
+
+function startTurnTimer() {
+  stopTurnTimer(false);
+  if (!state.timerSec || state.timerSec <= 0) {
+    state.turnEndsAt = null;
+    state.timerLeft = 0;
+    return;
+  }
+  state.turnEndsAt = Date.now() + state.timerSec * 1000;
+  state.timerLeft = state.timerSec;
+  countdownTimer = setInterval(() => {
+    if (!state.turnEndsAt) return;
+    const left = Math.max(0, Math.ceil((state.turnEndsAt - Date.now()) / 1000));
+    state.timerLeft = left;
+    const el = document.getElementById("timerVal");
+    if (el) {
+      el.textContent = String(left);
+      el.parentElement?.classList.toggle("urgent", left <= 5);
+    }
+    if (left <= 0) {
+      stopTurnTimer(false);
+      onTurnTimeout();
+    }
+  }, 200);
+}
+
+function stopTurnTimer(clearState = true) {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  if (clearState) {
+    state.turnEndsAt = null;
+    state.timerLeft = 0;
+  }
+}
+
+async function onTurnTimeout() {
+  if (state.room?.status !== "playing" || state.room.turn !== state.playerId) return;
+  state.error = "انتهى الوقت — انتقل الدور";
+  beep(220, 0.12, "sawtooth", 0.03);
+  vibrate(40);
+  if (state.mode === "ai") {
+    state.room.turn = state.aiPlayerId;
+    aiPublicRoomPatch();
+    applyRoom(state.room, { silent: true });
+    render();
+    setTimeout(aiTakeTurn, 500);
+    return;
+  }
+  const { data } = await sb.rpc("nd_skip_turn", {
+    p_code: state.room.code,
+    p_player_id: state.playerId,
+  });
+  if (data?.ok) {
+    applyRoom(data.room, { silent: true });
+    render();
+  }
+}
+
+function timerBadge() {
+  if (!state.timerSec || state.room?.status !== "playing" || state.room.turn !== state.playerId) return "";
+  return `<div class="timer-badge ${state.timerLeft <= 5 ? "urgent" : ""}">الوقت: <strong id="timerVal">${state.timerLeft || state.timerSec}</strong>ث</div>`;
+}
+
+function ensureHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(async () => {
+    if (state.mode !== "online" || !state.room?.code || !state.playerId) return;
+    if (!navigator.onLine) {
+      state.presenceNote = "نتّك انقطع... استنى شوي";
+      const banner = document.querySelector(".presence-banner");
+      if (!banner) render();
+      return;
+    }
+    try {
+      const { data } = await sb.rpc("nd_heartbeat", {
+        p_code: state.room.code,
+        p_player_id: state.playerId,
+      });
+      if (data?.ok && data.room) {
+        applyRoom(data.room, { silent: true });
+        // تحديث خفيف للبانر بدون إعادة رسم كاملة إن أمكن
+        const noteChanged = true;
+        if (noteChanged) {
+          const host = document.querySelector(".presence-slot");
+          if (host) host.innerHTML = presenceBanner();
+          else render();
+        }
+      }
+    } catch {}
+  }, 5000);
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+async function leaveRoomQuiet() {
+  if (state.mode !== "online" || !state.room?.code || !state.playerId) return;
+  try {
+    await sb.rpc("nd_leave_room", {
+      p_code: state.room.code,
+      p_player_id: state.playerId,
+    });
+  } catch {}
 }
 
 async function refreshRoom() {
@@ -292,6 +513,15 @@ function settingsBar() {
             `<button type="button" class="chip ${state.theme === t.id ? "on" : ""}" data-theme="${t.id}">${t.label}</button>`
         ).join("")}
       </div>
+      <div>
+        <label class="mini-label">مؤقت الدور</label>
+        <div class="theme-row">
+          ${TIMER_OPTS.map(
+            (t) =>
+              `<button type="button" class="chip ${state.timerSec === t.id ? "on" : ""}" data-timer="${t.id}">${t.label}</button>`
+          ).join("")}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -313,6 +543,69 @@ function bindSettings() {
       render();
     };
   });
+  document.querySelectorAll("[data-timer]").forEach((btn) => {
+    btn.onclick = () => {
+      state.timerSec = Number(btn.dataset.timer);
+      localStorage.setItem("nd_timer", String(state.timerSec));
+      if (state.room?.status === "playing" && state.room.turn === state.playerId) startTurnTimer();
+      render();
+    };
+  });
+}
+
+function tutorialOverlay() {
+  if (state.tutorialStep === null || state.tutorialStep === undefined) return "";
+  const steps = [
+    {
+      title: "١) اختر رقمك السري",
+      body: "كل لاعب يثبّت رقم من ٣ أو ٤ أو ٥ خانات. التكرار الجزئي مسموح، لكن ممنوع مثل 1111.",
+    },
+    {
+      title: "٢) خمّن بالدور",
+      body: "بعد كل تخمين يطلع لك كم خانة صح في مكانها فقط. أول واحد يجيب الرقم كامل يفوز.",
+    },
+    {
+      title: "٣) أدوات تساعدك",
+      body: "فيه تلميح مرة واحدة، قائمة تعليم، مؤقت اختياري، وثيمات. تقدر تلعب أونلاين أو ضد الكمبيوتر.",
+    },
+  ];
+  const step = steps[state.tutorialStep] || steps[0];
+  const last = state.tutorialStep >= steps.length - 1;
+  return `
+    <div class="tutorial-overlay" id="tutorialOverlay">
+      <div class="tutorial-sheet">
+        <div class="tutorial-progress">${state.tutorialStep + 1} / ${steps.length}</div>
+        <h2>${step.title}</h2>
+        <p>${step.body}</p>
+        <div class="row">
+          ${state.tutorialStep > 0 ? `<button class="btn btn-ghost" id="tutBack" type="button">رجوع</button>` : `<span></span>`}
+          <button class="btn btn-primary" id="tutNext" type="button">${last ? "يلا نبدأ" : "التالي"}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindTutorial() {
+  const next = document.getElementById("tutNext");
+  const back = document.getElementById("tutBack");
+  if (next) {
+    next.onclick = () => {
+      if (state.tutorialStep >= 2) {
+        state.tutorialStep = null;
+        localStorage.setItem("nd_tutorial_done", "1");
+      } else {
+        state.tutorialStep += 1;
+      }
+      render();
+    };
+  }
+  if (back) {
+    back.onclick = () => {
+      state.tutorialStep = Math.max(0, state.tutorialStep - 1);
+      render();
+    };
+  }
 }
 
 function infoOverlay() {
@@ -358,10 +651,24 @@ function renderHome() {
         <h1 class="brand">مبارزة<br /><span>الأرقام</span></h1>
         <p class="lede">تحدّى صاحبك أونلاين، أو العب ضد الكمبيوتر.</p>
       </div>
+      <div class="streak-card">
+        <div>
+          <span class="muted">اسمك الثابت</span>
+          <strong>${escapeHtml(state.name || "—")}</strong>
+        </div>
+        <div>
+          <span class="muted">سلسلة الانتصارات</span>
+          <strong>${getStreak()}</strong>
+        </div>
+        <div>
+          <span class="muted">أفضل سلسلة</span>
+          <strong>${getBestStreak()}</strong>
+        </div>
+      </div>
       ${settingsBar()}
       <div class="panel stack">
         <div>
-          <label for="name">اسمك</label>
+          <label for="name">اسمك المستعار</label>
           <input id="name" maxlength="20" placeholder="مثلاً: قاسم" value="${escapeHtml(state.name)}" />
         </div>
         <div>
@@ -387,6 +694,7 @@ function renderHome() {
       </div>
     </section>
     ${infoOverlay()}
+    ${tutorialOverlay()}
   `;
 
   document.getElementById("name").oninput = (e) => {
@@ -409,6 +717,7 @@ function renderHome() {
   document.getElementById("aiBtn").onclick = startAiGame;
   bindInfo();
   bindSettings();
+  bindTutorial();
 }
 
 function roomHeader() {
@@ -656,6 +965,7 @@ function renderLobby() {
   app.innerHTML = `
     <section class="screen">
       ${roomHeader()}
+      <div class="presence-slot">${presenceBanner()}</div>
       <p class="status-line">بانتظار انضمام الخصم<span class="waiting-dots"></span></p>
       ${playersBlock()}
       ${inviteBlock()}
@@ -696,7 +1006,9 @@ function renderPlay() {
     <section class="screen">
       ${roomHeader()}
       ${mySecretBar()}
+      <div class="presence-slot">${presenceBanner()}</div>
       ${turnBanner()}
+      ${timerBadge()}
       ${playersBlock()}
       ${
         myTurn
@@ -704,7 +1016,8 @@ function renderPlay() {
              <button class="btn btn-ghost" id="hintBtn" ${state.busy || state.room.hintUsed ? "disabled" : ""}>
                ${state.room.hintUsed ? "تم استخدام التلميح" : "تلميح (مرة واحدة)"}
              </button>
-             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}`
+             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}
+             ${state.error ? `<p class="error">${escapeHtml(state.error)}</p>` : ""}`
           : `<div class="panel"><p class="hint waiting-dots">انتظر تخمين الخصم</p>
              ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}</div>`
       }
@@ -730,6 +1043,7 @@ function renderFinished() {
       <div class="win-box">
         <h2>${won ? "فزت 🔥" : "انتهت الجولة"}</h2>
         <p>${won ? "خمّنت رقم الخصم صح!" : `${escapeHtml(winnerName)} خمّن رقمك.`}</p>
+        <p class="hint">سلسلتك الآن: <strong style="color:var(--lime)">${getStreak()}</strong> · أفضل سلسلة: ${getBestStreak()}</p>
         ${
           state.room.opponentSecret
             ? `<p class="reveal">رقم الخصم كان: <strong>${escapeHtml(state.room.opponentSecret)}</strong></p>`
@@ -749,17 +1063,22 @@ function renderFinished() {
 }
 
 function goHome() {
+  leaveRoomQuiet();
   if (roomChannel) {
     sb.removeChannel(roomChannel);
     roomChannel = null;
   }
+  stopHeartbeat();
+  stopTurnTimer();
   clearTracker();
   localStorage.removeItem("nd_active");
   state.infoOpen = false;
+  state.presenceNote = "";
   state.room = null;
   state.playerId = null;
   state.mode = "online";
   state.aiSecret = null;
+  state.aiCandidates = [];
   state.screen = "home";
   state.secretDraft = "";
   state.guessDraft = "";
@@ -815,8 +1134,10 @@ function startAiGame() {
   state.mode = "ai";
   state.playerId = myId;
   state.aiSecret = randomSecret(digits);
+  state.aiCandidates = buildCandidates(digits);
   clearTracker();
   state.trackerGameKey = "ai";
+  state.presenceNote = "";
   state.room = {
     code: "AI",
     status: "setup",
@@ -887,15 +1208,19 @@ async function setSecret() {
 function aiTakeTurn() {
   if (state.mode !== "ai" || state.room?.status !== "playing") return;
   if (state.room.turn !== state.aiPlayerId) return;
-  const digits = digitCount();
-  let guess;
-  do {
-    guess = randomSecret(digits);
-  } while ((state.room._allGuesses || []).some((g) => g.by === state.aiPlayerId && g.guess === guess));
+  if (!state.aiCandidates.length) state.aiCandidates = buildCandidates(digitCount());
+  let guess = aiPickGuess();
+  // لا تكرر نفس التخمين
+  const used = new Set((state.room._allGuesses || []).filter((g) => g.by === state.aiPlayerId).map((g) => g.guess));
+  if (used.has(guess)) {
+    const alt = state.aiCandidates.find((c) => !used.has(c));
+    if (alt) guess = alt;
+  }
   const correct = scoreGuess(state.room.mySecret, guess);
+  aiLearn(guess, correct);
   state.room._allGuesses.push({ by: state.aiPlayerId, guess, correctPositions: correct });
-  soundGuess(correct, digits);
-  if (correct === digits) {
+  soundGuess(correct, digitCount());
+  if (correct === digitCount()) {
     state.room.status = "finished";
     state.room.winner = state.aiPlayerId;
     state.room.turn = null;
@@ -1010,12 +1335,18 @@ async function rematch() {
 }
 
 window.addEventListener("online", () => {
+  if (state.presenceNote && state.presenceNote.includes("نتّك")) state.presenceNote = "رجع النت... استنى شوي";
   if (state.mode === "online" && state.room?.code) {
     subscribeRoom(state.room.code);
     refreshRoom();
   } else {
     tryReconnect();
   }
+});
+
+window.addEventListener("offline", () => {
+  state.presenceNote = "نتّك انقطع... استنى شوي";
+  render();
 });
 
 document.addEventListener("visibilitychange", () => {
