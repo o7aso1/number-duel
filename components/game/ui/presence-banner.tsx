@@ -19,7 +19,7 @@ const CONFIG: Record<
   },
   wait: {
     icon: Hourglass,
-    text: 'بانتظار حركة الخصم…',
+    text: 'الخصم يفكر ويخمّن…',
     tone: 'bg-secondary/15 text-secondary border-secondary/30',
   },
   left: {

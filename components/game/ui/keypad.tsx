@@ -20,12 +20,12 @@ export function Keypad({ onDigit, onDelete, disabled }: KeypadProps) {
         </KeyButton>
       ))}
       <KeyButton onClick={onDelete} disabled={disabled} variant="muted" ariaLabel="حذف">
-        <Delete className="size-6" />
+        <Delete className="size-6 shrink-0" strokeWidth={2.25} />
       </KeyButton>
       <KeyButton onClick={() => onDigit('0')} disabled={disabled}>
         0
       </KeyButton>
-      <span />
+      <span aria-hidden className="invisible" />
     </div>
   )
 }
@@ -50,7 +50,8 @@ function KeyButton({
       disabled={disabled}
       aria-label={ariaLabel}
       className={cn(
-        'h-16 rounded-2xl font-mono text-2xl font-semibold tabular',
+        'inline-flex h-16 w-full items-center justify-center rounded-2xl',
+        'font-mono text-2xl font-semibold tabular',
         'border border-border transition-all active:scale-95 active:brightness-110',
         'disabled:pointer-events-none disabled:opacity-40',
         variant === 'default'

@@ -27,6 +27,7 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
       <button
+        type="button"
         aria-label="إغلاق"
         onClick={onClose}
         className="absolute inset-0 bg-black/60 animate-in fade-in duration-200"
@@ -38,27 +39,29 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
         className={cn(
           'relative w-full max-w-md rounded-t-3xl border-x border-t border-border bg-popover text-popover-foreground',
           'animate-in slide-in-from-bottom-6 duration-300',
+          'pb-[max(1.5rem,env(safe-area-inset-bottom))]',
           className,
         )}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <div className="mx-auto h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
         </div>
-        <div className="flex items-center justify-between gap-3 px-5">
+        <div className="flex items-center gap-3 px-5 pb-1 pt-2">
           {title ? (
-            <h2 className="text-lg font-bold text-balance">{title}</h2>
+            <h2 className="min-w-0 flex-1 text-lg font-bold text-balance">{title}</h2>
           ) : (
-            <span />
+            <span className="flex-1" />
           )}
           <button
+            type="button"
             onClick={onClose}
             aria-label="إغلاق"
-            className="grid size-9 place-items-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground transition-colors hover:text-foreground"
           >
             <X className="size-5" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 pb-8 pt-3">{children}</div>
+        <div className="max-h-[70vh] overflow-y-auto px-5 pb-4 pt-3">{children}</div>
       </div>
     </div>
   )

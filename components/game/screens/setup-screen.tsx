@@ -10,10 +10,12 @@ export function SetupScreen({
   length,
   onConfirm,
   onBack,
+  waitingOpponent,
 }: {
   length: number
   onConfirm: (secret: string) => void
   onBack: () => void
+  waitingOpponent?: boolean
 }) {
   const [value, setValue] = useState('')
   const slots = Array.from({ length }, (_, i) => value[i] ?? '')
@@ -22,10 +24,38 @@ export function SetupScreen({
   const valid = full && !banned
 
   const addDigit = (d: string) => {
-    if (value.length >= length) return
+    if (waitingOpponent || value.length >= length) return
     setValue((v) => v + d)
   }
-  const del = () => setValue((v) => v.slice(0, -1))
+  const del = () => {
+    if (waitingOpponent) return
+    setValue((v) => v.slice(0, -1))
+  }
+
+  if (waitingOpponent) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 pb-8 pt-6">
+        <div className="grid size-16 place-items-center rounded-2xl border border-primary/40 bg-primary/15 text-primary">
+          <Lock className="size-7 animate-pulse" />
+        </div>
+        <div className="text-center">
+          <h1 className="text-xl font-bold">الخصم يختار رقمه…</h1>
+          <p className="mt-2 text-sm text-muted-foreground text-pretty">
+            الكمبيوتر يفكر ويختار رقمه السري — ثوانٍ قليلة.
+          </p>
+        </div>
+        <div className="flex gap-1.5" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="size-2.5 rounded-full bg-primary/70 animate-pulse"
+              style={{ animationDelay: `${i * 180}ms` }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-1 flex-col px-6 pb-8 pt-6">

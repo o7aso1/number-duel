@@ -114,10 +114,12 @@ export function GameApp() {
   const [won, setWon] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [cpuPickingSecret, setCpuPickingSecret] = useState(false)
 
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const streakKeyRef = useRef<string | null>(null)
+  const cpuPrepRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load prefs
   useEffect(() => {
@@ -249,6 +251,11 @@ export function GameApp() {
   )
 
   const resetSession = useCallback(() => {
+    if (cpuPrepRef.current) {
+      clearTimeout(cpuPrepRef.current)
+      cpuPrepRef.current = null
+    }
+    setCpuPickingSecret(false)
     setGuesses([])
     setCpuCandidates([])
     setIsMyTurn(true)
@@ -290,11 +297,13 @@ export function GameApp() {
   }
 
   const startCpu = () => {
+    if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
     setMode('cpu')
     setLength(difficulty)
     resetSession()
+    setCpuPickingSecret(false)
     setCpuCandidates(buildCandidates(difficulty))
-    setOpponentSecret(generateSecret(difficulty))
+    setOpponentSecret('')
     setScreen('setup')
     if (!tutorialSeen) setTutorialOpen(true)
   }
@@ -354,15 +363,27 @@ export function GameApp() {
     if (!isValidSecret(secret, length)) return
     if (mode === 'cpu') {
       setPlayerSecret(secret)
-      setGuesses([])
-      setIsMyTurn(Math.random() < 0.5)
-      setTurnNumber(1)
-      setHintUsed(false)
-      setHint(null)
-      setWon(false)
-      setSecondsLeft(timer > 0 ? timer : null)
-      setScreen('play')
+      setCpuPickingSecret(true)
+      setError('')
       beep(muted, 600, 0.08)
+      if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
+      // Simulate the computer picking its secret like a human (~4–6s)
+      const thinkMs = 4000 + Math.floor(Math.random() * 2000)
+      cpuPrepRef.current = setTimeout(() => {
+        setOpponentSecret(generateSecret(length))
+        setGuesses([])
+        const playerStarts = Math.random() < 0.5
+        setIsMyTurn(playerStarts)
+        setPresence(playerStarts ? 'online' : 'wait')
+        setTurnNumber(1)
+        setHintUsed(false)
+        setHint(null)
+        setWon(false)
+        setSecondsLeft(timer > 0 && playerStarts ? timer : null)
+        setCpuPickingSecret(false)
+        setScreen('play')
+        beep(muted, 540, 0.09)
+      }, thinkMs)
       return
     }
     if (!roomCode || !playerId) return
@@ -432,9 +453,12 @@ export function GameApp() {
     applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
   }
 
-  // CPU turn
+  // CPU turn — think for ~4.5–6.5s so it feels human
   useEffect(() => {
     if (screen !== 'play' || mode !== 'cpu' || isMyTurn || won) return
+    if (!playerSecret || !opponentSecret) return
+    setPresence('wait')
+    const thinkMs = 4500 + Math.floor(Math.random() * 2000)
     const t = setTimeout(() => {
       let pool = cpuCandidates.length ? cpuCandidates : buildCandidates(length)
       const guess = pickSmartGuess(pool)
@@ -452,7 +476,7 @@ export function GameApp() {
       setSecondsLeft(timer > 0 ? timer : null)
       vibrate(25)
       beep(muted, 540, 0.09)
-    }, 900)
+    }, thinkMs)
     return () => clearTimeout(t)
   }, [
     screen,
@@ -546,7 +570,7 @@ export function GameApp() {
     if (mode === 'cpu') {
       resetSession()
       setCpuCandidates(buildCandidates(length))
-      setOpponentSecret(generateSecret(length))
+      setOpponentSecret('')
       setScreen('setup')
       return
     }
@@ -684,6 +708,7 @@ export function GameApp() {
             length={length}
             onConfirm={confirmSecret}
             onBack={goHome}
+            waitingOpponent={cpuPickingSecret}
           />
         )}
 
