@@ -515,7 +515,7 @@ function settingsBar() {
       </div>
       <div>
         <label class="mini-label">مؤقت الدور</label>
-        <div class="theme-row">
+        <div class="theme-row timer-row">
           ${TIMER_OPTS.map(
             (t) =>
               `<button type="button" class="chip ${state.timerSec === t.id ? "on" : ""}" data-timer="${t.id}">${t.label}</button>`
@@ -643,30 +643,31 @@ function bindInfo() {
 
 function renderHome() {
   app.innerHTML = `
-    <section class="screen">
+    <section class="screen home-screen">
       <div class="home-top">
         <button class="info-btn" id="infoBtn" type="button">معلومات</button>
       </div>
-      <div>
+      <header class="hero">
+        <div class="hero-glow" aria-hidden="true"></div>
         <h1 class="brand">مبارزة<br /><span>الأرقام</span></h1>
-        <p class="lede">تحدّى صاحبك أونلاين، أو العب ضد الكمبيوتر.</p>
-      </div>
+        <p class="lede">تحدّى صاحبك أونلاين، أو العب ضد الكمبيوتر — بسيطة وسريعة.</p>
+      </header>
       <div class="streak-card">
         <div>
-          <span class="muted">اسمك الثابت</span>
+          <span class="muted">اسمك</span>
           <strong>${escapeHtml(state.name || "—")}</strong>
         </div>
         <div>
-          <span class="muted">سلسلة الانتصارات</span>
+          <span class="muted">سلسلتك</span>
           <strong>${getStreak()}</strong>
         </div>
         <div>
-          <span class="muted">أفضل سلسلة</span>
+          <span class="muted">أفضل</span>
           <strong>${getBestStreak()}</strong>
         </div>
       </div>
       ${settingsBar()}
-      <div class="panel stack">
+      <div class="panel stack home-panel">
         <div>
           <label for="name">اسمك المستعار</label>
           <input id="name" maxlength="20" placeholder="مثلاً: قاسم" value="${escapeHtml(state.name)}" />
@@ -687,8 +688,8 @@ function renderHome() {
         ${state.reconnecting ? `<p class="hint">جارٍ استرجاع جلستك...</p>` : ""}
         <button class="btn btn-primary" id="createBtn" ${state.busy ? "disabled" : ""}>إنشاء غرفة</button>
         <button class="btn btn-ai" id="aiBtn" ${state.busy ? "disabled" : ""}>العب ضد الكمبيوتر</button>
-        <div class="row">
-          <input id="joinCode" class="digits" maxlength="5" placeholder="الكود" value="${escapeHtml(state.joinCode)}" style="letter-spacing:0.2em;font-size:1.3rem" />
+        <div class="row join-row">
+          <input id="joinCode" class="digits" maxlength="5" placeholder="الكود" value="${escapeHtml(state.joinCode)}" />
           <button class="btn btn-sky" id="joinBtn" ${state.busy ? "disabled" : ""}>انضم</button>
         </div>
       </div>
