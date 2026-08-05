@@ -1,62 +1,98 @@
 'use client'
 
-import { X } from 'lucide-react'
 import { Sheet } from '@/components/game/ui/sheet'
 import { cn } from '@/lib/utils'
 
-const DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+export function cellKey(digit: number, slot: number) {
+  return `${digit}-${slot}`
+}
 
 export function TrackerSheet({
   open,
   onClose,
-  marked,
+  length,
+  crossed,
   onToggle,
 }: {
   open: boolean
   onClose: () => void
-  marked: Set<string>
-  onToggle: (digit: string) => void
+  length: number
+  crossed: Set<string>
+  onToggle: (key: string) => void
 }) {
+  const slots = Math.max(3, Math.min(5, length || 4))
+
   return (
-    <Sheet open={open} onClose={onClose} title="لوحة الاستبعاد">
-      <p className="mb-4 text-center text-sm leading-relaxed text-muted-foreground text-pretty">
-        اضغط على أي رقم لاستبعاده من رقم الخصم. الرقم المستبعد يظهر بعلامة حمراء.
+    <Sheet open={open} onClose={onClose} title="علّم الأرقام" placement="center">
+      <p className="mb-3 text-sm text-muted-foreground text-pretty">
+        اضغط خانة لحط ✕ أحمر — كل صف رقم، وكل عمود موضع في رقم الخصم.
       </p>
-      <div className="grid grid-cols-5 gap-3" dir="ltr">
-        {DIGITS.map((d) => {
-          const isMarked = marked.has(d)
-          return (
-            <button
-              key={d}
-              type="button"
-              onClick={() => onToggle(d)}
-              aria-pressed={isMarked}
-              aria-label={isMarked ? `إلغاء استبعاد ${d}` : `استبعاد ${d}`}
-              className={cn(
-                'relative flex aspect-square items-center justify-center rounded-2xl border-2',
-                'font-mono text-2xl font-bold tabular transition-all active:scale-95',
-                isMarked
-                  ? 'border-destructive/60 bg-destructive/15 text-muted-foreground'
-                  : 'border-border bg-card text-foreground hover:border-primary/50',
-              )}
-            >
-              <span className={cn(isMarked && 'opacity-40')}>{d}</span>
-              {isMarked && (
-                <X
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 m-auto size-8 text-destructive"
-                  strokeWidth={3}
-                />
-              )}
-            </button>
-          )
-        })}
+
+      {/* Column headers: positions */}
+      <div
+        className="mb-1.5 grid gap-1.5"
+        style={{ gridTemplateColumns: `1.6rem repeat(${slots}, minmax(0, 1fr))` }}
+        dir="ltr"
+      >
+        <span />
+        {Array.from({ length: slots }, (_, i) => (
+          <span
+            key={i}
+            className="text-center font-mono text-[11px] font-semibold tabular text-muted-foreground"
+          >
+            {i + 1}
+          </span>
+        ))}
       </div>
-      <p className="mt-4 text-center text-xs text-muted-foreground">
-        {marked.size > 0
-          ? `مستبعد: ${marked.size} أرقام`
-          : 'ما في أرقام مستبعدة بعد'}
-      </p>
+
+      <div className="flex flex-col gap-1.5" dir="ltr">
+        {DIGITS.map((digit) => (
+          <div
+            key={digit}
+            className="grid items-center gap-1.5"
+            style={{ gridTemplateColumns: `1.6rem repeat(${slots}, minmax(0, 1fr))` }}
+          >
+            <span className="text-center font-mono text-sm font-bold tabular text-muted-foreground">
+              {digit}
+            </span>
+            {Array.from({ length: slots }, (_, slot) => {
+              const key = cellKey(digit, slot)
+              const isCrossed = crossed.has(key)
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onToggle(key)}
+                  aria-pressed={isCrossed}
+                  aria-label={
+                    isCrossed
+                      ? `إلغاء استبعاد الرقم ${digit} من الموضع ${slot + 1}`
+                      : `استبعاد الرقم ${digit} من الموضع ${slot + 1}`
+                  }
+                  className={cn(
+                    'relative grid min-h-11 place-items-center rounded-xl border font-mono text-lg font-bold tabular transition-all active:scale-95',
+                    isCrossed
+                      ? 'border-destructive/50 bg-destructive/10 text-muted-foreground/50'
+                      : 'border-border bg-card text-foreground hover:border-primary/45',
+                  )}
+                >
+                  <span>{digit}</span>
+                  {isCrossed && (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 grid place-items-center text-xl font-extrabold text-destructive"
+                    >
+                      ✕
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </Sheet>
   )
 }

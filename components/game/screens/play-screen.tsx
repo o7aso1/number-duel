@@ -167,7 +167,7 @@ export function PlayScreen(props: PlayProps) {
           className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold transition-all active:scale-95"
         >
           <Grid3x3 className="size-4 text-secondary" />
-          لوحة الاستبعاد
+          القائمة
         </button>
       </div>
 

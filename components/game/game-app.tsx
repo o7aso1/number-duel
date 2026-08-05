@@ -557,11 +557,11 @@ export function GameApp() {
     beep(muted, 700, 0.1)
   }
 
-  const toggleMark = (digit: string) => {
+  const toggleMark = (key: string) => {
     setMarked((prev) => {
       const next = new Set(prev)
-      if (next.has(digit)) next.delete(digit)
-      else next.add(digit)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
@@ -750,7 +750,8 @@ export function GameApp() {
       <TrackerSheet
         open={trackerOpen}
         onClose={() => setTrackerOpen(false)}
-        marked={marked}
+        length={length}
+        crossed={marked}
         onToggle={toggleMark}
       />
       <Tutorial

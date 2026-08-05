@@ -12,7 +12,7 @@ const RULES = [
 
 export function InfoSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Sheet open={open} onClose={onClose} title="كيف تلعب">
+    <Sheet open={open} onClose={onClose} title="كيف تلعب" placement="center">
       <ol className="flex flex-col gap-3">
         {RULES.map((rule, i) => (
           <li key={i} className="flex items-start gap-3">
