@@ -16,9 +16,20 @@ const state = {
   busy: false,
   joinCode: "",
   trackerOpen: false,
+  infoOpen: false,
   crossed: new Set(),
   trackerGameKey: null,
 };
+
+function isValidNumber(value) {
+  if (typeof value !== "string" || !/^\d{4}$/.test(value)) {
+    return { ok: false, error: "لازم ٤ أرقام (مثال: 1123)" };
+  }
+  if (/^(\d)\1{3}$/.test(value)) {
+    return { ok: false, error: "ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111" };
+  }
+  return { ok: true };
+}
 
 let roomChannel = null;
 
@@ -136,9 +147,59 @@ function render() {
   return renderHome();
 }
 
+function infoOverlay() {
+  if (!state.infoOpen) return "";
+  return `
+    <div class="info-overlay" id="infoOverlay" role="dialog" aria-modal="true" aria-label="شرح اللعبة">
+      <div class="info-sheet">
+        <button class="tracker-close" id="infoClose" type="button" aria-label="إغلاق">×</button>
+        <h2 class="tracker-title">كيف تلعب؟</h2>
+        <div class="info-body">
+          <p><strong>فكرة اللعبة</strong><br />مبارزة بين شخصين. كل واحد يختار رقم سري من ٤ خانات، والاثنين يحاولون يخمنون رقم بعض بالدور.</p>
+          <p><strong>١) إنشاء غرفة أو الانضمام</strong><br />واحد ينشئ غرفة ويشارك الكود أو الرابط، والثاني يدخل بنفس الكود.</p>
+          <p><strong>٢) اختيار الرقم السري</strong><br />كل لاعب يكتب ٤ أرقام من ٠ إلى ٩ ويثبّتها. التكرار بين الأرقام مسموح (مثل 1123)، لكن ممنوع تكرار نفس الرقم في كل الخانات الأربع مثل 0000 أو 1111.</p>
+          <p><strong>٣) التخمين بالدور</strong><br />لما يبدأ الدور، تكتب تخمينك لرقم الخصم. يطلعلك فقط كم رقم طلع صح في خانته الصحيحة. ما يظهر لك أرقام الخصم ولا تخميناته.</p>
+          <p><strong>٤) الفوز</strong><br />أول واحد يخمن الـ ٤ أرقام كلها في أماكنها الصحيحة يفوز.</p>
+          <p><strong>زر القائمة</strong><br />تقدر تفتح قائمة تعليم عشان تعلّم أرقام بـ X أحمر وتساعدك تتذكر وش استبعدت. العلامات تنحفظ لنفس الجولة وتتصفر مع لعبة جديدة.</p>
+          <p><strong>رقمك فوق</strong><br />بعد ما تثبّت رقمك، يبقى ظاهر لك فوق الشاشة عشان ما تنساه، وما أحد غيرك يشوفه.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindInfo() {
+  const openBtn = document.getElementById("infoBtn");
+  if (openBtn) {
+    openBtn.onclick = () => {
+      state.infoOpen = true;
+      render();
+    };
+  }
+  const closeBtn = document.getElementById("infoClose");
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      state.infoOpen = false;
+      render();
+    };
+  }
+  const overlay = document.getElementById("infoOverlay");
+  if (overlay) {
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        state.infoOpen = false;
+        render();
+      }
+    });
+  }
+}
+
 function renderHome() {
   app.innerHTML = `
     <section class="screen">
+      <div class="home-top">
+        <button class="info-btn" id="infoBtn" type="button" aria-label="معلومات اللعبة">معلومات</button>
+      </div>
       <div>
         <h1 class="brand">مبارزة<br /><span>الأرقام</span></h1>
         <p class="lede">كل واحد يختار ٤ أرقام سرية، وتتحدون تخمين أرقام بعض على جوالات مختلفة.</p>
@@ -157,6 +218,7 @@ function renderHome() {
         <p class="hint">شارك كود الغرفة مع صاحبك ويلعبون من أي جهازين على الإنترنت.</p>
       </div>
     </section>
+    ${infoOverlay()}
   `;
 
   const nameInput = document.getElementById("name");
@@ -172,6 +234,7 @@ function renderHome() {
 
   document.getElementById("createBtn").onclick = createRoom;
   document.getElementById("joinBtn").onclick = joinRoom;
+  bindInfo();
 }
 
 function roomHeader() {
@@ -179,6 +242,7 @@ function roomHeader() {
     <div class="topbar">
       <div class="pill">الغرفة <strong>${escapeHtml(state.room.code)}</strong></div>
       <div class="topbar-actions">
+        <button class="btn btn-ghost copy-btn info-gap" id="infoBtn" type="button">معلومات</button>
         <button class="btn btn-ghost copy-btn" id="trackerBtn" type="button">القائمة</button>
         <button class="btn btn-ghost copy-btn" id="copyCode" type="button">نسخ الرابط</button>
       </div>
@@ -277,6 +341,7 @@ function bindCopy() {
 function bindRoomChrome() {
   bindCopy();
   bindTracker();
+  bindInfo();
 }
 
 function playersBlock() {
@@ -397,6 +462,7 @@ function renderLobby() {
       </div>
     </section>
     ${trackerOverlay()}
+    ${infoOverlay()}
   `;
   bindRoomChrome();
 }
@@ -414,10 +480,11 @@ function renderSetup() {
         self?.ready
           ? `<div class="panel"><p class="hint">رقمك السري محفوظ فوق. ما أحد يشوفه غيرك. لما الخصم يثبت رقمه تبدأ المبارزة.</p></div>`
           : `${digitPad("secretDraft", "تثبيت الرقم")}
-             <p class="hint">٤ أرقام من ٠ إلى ٩، والتكرار مسموح. الخصم يحاول يخمنها وأنت تحاول تخمن رقمه.</p>`
+             <p class="hint">٤ أرقام من ٠ إلى ٩، والتكرار الجزئي مسموح (مثل 1123)، لكن ممنوع 1111 أو أي رقم متكرر بالكامل.</p>`
       }
     </section>
     ${trackerOverlay()}
+    ${infoOverlay()}
   `;
   bindRoomChrome();
   if (!self?.ready) bindDigitPad("secretDraft", setSecret);
@@ -443,6 +510,7 @@ function renderPlay() {
       ${historyBlock()}
     </section>
     ${trackerOverlay()}
+    ${infoOverlay()}
   `;
   bindRoomChrome();
   if (myTurn) bindDigitPad("guessDraft", sendGuess);
@@ -465,6 +533,7 @@ function renderFinished() {
       <button class="btn btn-ghost" id="homeBtn">القائمة الرئيسية</button>
     </section>
     ${trackerOverlay()}
+    ${infoOverlay()}
   `;
   bindRoomChrome();
   document.getElementById("rematchBtn").onclick = rematch;
@@ -474,6 +543,7 @@ function renderFinished() {
       roomChannel = null;
     }
     clearTracker();
+    state.infoOpen = false;
     state.room = null;
     state.playerId = null;
     state.screen = "home";
@@ -524,6 +594,8 @@ async function joinRoom() {
 }
 
 async function setSecret() {
+  const check = isValidNumber(state.secretDraft);
+  if (!check.ok) return setError(check.error);
   setBusy(true);
   setError("");
   const { data, error } = await sb.rpc("nd_set_secret", {
@@ -540,6 +612,8 @@ async function setSecret() {
 }
 
 async function sendGuess() {
+  const check = isValidNumber(state.guessDraft);
+  if (!check.ok) return setError(check.error);
   setBusy(true);
   setError("");
   const { data, error } = await sb.rpc("nd_guess", {

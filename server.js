@@ -45,7 +45,11 @@ function generateCode() {
 }
 
 function isValidSecret(secret) {
-  return typeof secret === "string" && /^\d{4}$/.test(secret);
+  return (
+    typeof secret === "string" &&
+    /^\d{4}$/.test(secret) &&
+    !/^(\d)\1{3}$/.test(secret)
+  );
 }
 
 function scoreGuess(secret, guess) {
@@ -142,7 +146,9 @@ io.on("connection", (socket) => {
     if (!isValidSecret(secret)) {
       return cb?.({
         ok: false,
-        error: "لازم ٤ أرقام (مثال: 1123)",
+        error: /^(\d)\1{3}$/.test(String(secret || ""))
+          ? "ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111"
+          : "لازم ٤ أرقام (مثال: 1123)",
       });
     }
 
@@ -168,7 +174,9 @@ io.on("connection", (socket) => {
     if (!isValidSecret(guessStr)) {
       return cb?.({
         ok: false,
-        error: "التخمين لازم يكون ٤ أرقام",
+        error: /^(\d)\1{3}$/.test(guessStr)
+          ? "ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111"
+          : "التخمين لازم يكون ٤ أرقام",
       });
     }
 

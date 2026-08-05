@@ -220,6 +220,9 @@ begin
   if p_secret is null or p_secret !~ '^\d{4}$' then
     return jsonb_build_object('ok', false, 'error', 'لازم ٤ أرقام (مثال: 1123)');
   end if;
+  if p_secret ~ '^(\d)\1{3}$' then
+    return jsonb_build_object('ok', false, 'error', 'ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111');
+  end if;
 
   select * into r from public.nd_rooms where code = v_code for update;
   if not found then
@@ -271,6 +274,9 @@ declare
 begin
   if p_guess is null or p_guess !~ '^\d{4}$' then
     return jsonb_build_object('ok', false, 'error', 'التخمين لازم يكون ٤ أرقام');
+  end if;
+  if p_guess ~ '^(\d)\1{3}$' then
+    return jsonb_build_object('ok', false, 'error', 'ما ينفع تكرر نفس الرقم ٤ مرات مثل 1111');
   end if;
 
   select * into r from public.nd_rooms where code = v_code for update;
