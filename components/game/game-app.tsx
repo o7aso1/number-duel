@@ -6,10 +6,14 @@ import {
   countCorrect,
   filterCandidates,
   generateSecret,
+  isValidGuess,
   isValidSecret,
+  normalizeTheme,
   pickSmartGuess,
   storageGet,
+  storageRemove,
   storageSet,
+  type ChatMessage,
   type Difficulty,
   type Guess,
   type Screen,
@@ -25,10 +29,27 @@ import { PlayScreen } from '@/components/game/screens/play-screen'
 import { FinishedScreen } from '@/components/game/screens/finished-screen'
 import { InfoSheet } from '@/components/game/overlays/info-sheet'
 import { TrackerSheet } from '@/components/game/overlays/tracker-sheet'
+import { ChatSheet } from '@/components/game/overlays/chat-sheet'
 import { Tutorial } from '@/components/game/overlays/tutorial'
 import { getSupabase } from '@/lib/supabase'
 
 type Mode = 'cpu' | 'room'
+
+type CpuSession = {
+  v: 1
+  screen: Screen
+  length: Difficulty
+  playerSecret: string
+  opponentSecret: string
+  guesses: Guess[]
+  cpuCandidates: string[]
+  isMyTurn: boolean
+  turnNumber: number
+  hintUsed: boolean
+  marked: string[]
+  won: boolean
+  cpuPickingSecret: boolean
+}
 
 type RoomPayload = {
   code: string
@@ -115,17 +136,26 @@ export function GameApp() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [cpuPickingSecret, setCpuPickingSecret] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [unreadChat, setUnreadChat] = useState(0)
 
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const streakKeyRef = useRef<string | null>(null)
   const cpuPrepRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const chatOpenRef = useRef(false)
 
-  // Load prefs
+  useEffect(() => {
+    chatOpenRef.current = chatOpen
+    if (chatOpen) setUnreadChat(0)
+  }, [chatOpen])
+
+  // Load prefs + resume match
   useEffect(() => {
     setNickname(storageGet('nd_name', ''))
     setDifficulty(storageGet<Difficulty>('nd_digits', 4))
-    setTheme(storageGet<ThemeName>('nd_theme', 'classic'))
+    setTheme(normalizeTheme(storageGet('nd_theme', 'classic')))
     setMuted(storageGet('nd_muted', false))
     setTimer(storageGet<TimerOption>('nd_timer', 0))
     setStreak(storageGet('nd_streak', 0))
@@ -227,6 +257,49 @@ export function GameApp() {
     [applyOnlineRoom],
   )
 
+  const appendChat = useCallback((msg: ChatMessage, code: string) => {
+    setChatMessages((prev) => {
+      if (prev.some((m) => m.id === msg.id)) return prev
+      const next = [...prev, msg].slice(-100)
+      storageSet(`nd_chat_${code}`, next)
+      return next
+    })
+    if (!chatOpenRef.current) setUnreadChat((n) => n + 1)
+  }, [])
+
+  const loadChat = useCallback(async (code: string, pid: string) => {
+    const cached = storageGet<ChatMessage[]>(`nd_chat_${code}`, [])
+    if (cached.length) setChatMessages(cached)
+    try {
+      const { data } = await getSupabase().rpc('nd_list_chat', {
+        p_code: code,
+        p_player_id: pid,
+        p_limit: 80,
+      })
+      if (data?.ok && Array.isArray(data.messages)) {
+        const msgs: ChatMessage[] = data.messages.map(
+          (m: {
+            id: number | string
+            playerId: string
+            playerName: string
+            body: string
+            createdAt: string
+          }) => ({
+            id: String(m.id),
+            playerId: m.playerId,
+            playerName: m.playerName,
+            body: m.body,
+            createdAt: m.createdAt,
+          }),
+        )
+        setChatMessages(msgs)
+        storageSet(`nd_chat_${code}`, msgs)
+      }
+    } catch {
+      /* broadcast-only fallback */
+    }
+  }, [])
+
   const subscribeRoom = useCallback(
     (code: string, pid: string) => {
       const sb = getSupabase()
@@ -244,10 +317,17 @@ export function GameApp() {
             if (data?.ok && data.room) applyOnlineRoom(data.room as RoomPayload, pid)
           },
         )
+        .on('broadcast', { event: 'chat' }, ({ payload }) => {
+          const msg = payload as ChatMessage
+          if (!msg?.id || !msg.body) return
+          if (msg.playerId === pid) return
+          appendChat(msg, code)
+        })
         .subscribe()
       startHeartbeat(code, pid)
+      void loadChat(code, pid)
     },
-    [applyOnlineRoom, startHeartbeat],
+    [applyOnlineRoom, startHeartbeat, appendChat, loadChat],
   )
 
   const resetSession = useCallback(() => {
@@ -269,7 +349,11 @@ export function GameApp() {
     setOpponentSecret('')
     setSecondsLeft(null)
     setError('')
+    setChatMessages([])
+    setUnreadChat(0)
+    setChatOpen(false)
     streakKeyRef.current = null
+    storageRemove('nd_cpu_session')
   }, [])
 
   const leaveOnline = useCallback(async () => {
@@ -366,24 +450,6 @@ export function GameApp() {
       setCpuPickingSecret(true)
       setError('')
       beep(muted, 600, 0.08)
-      if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
-      // Simulate the computer picking its secret like a human (~4–6s)
-      const thinkMs = 4000 + Math.floor(Math.random() * 2000)
-      cpuPrepRef.current = setTimeout(() => {
-        setOpponentSecret(generateSecret(length))
-        setGuesses([])
-        const playerStarts = Math.random() < 0.5
-        setIsMyTurn(playerStarts)
-        setPresence(playerStarts ? 'online' : 'wait')
-        setTurnNumber(1)
-        setHintUsed(false)
-        setHint(null)
-        setWon(false)
-        setSecondsLeft(timer > 0 && playerStarts ? timer : null)
-        setCpuPickingSecret(false)
-        setScreen('play')
-        beep(muted, 540, 0.09)
-      }, thinkMs)
       return
     }
     if (!roomCode || !playerId) return
@@ -402,6 +468,32 @@ export function GameApp() {
     beep(muted, 600, 0.08)
   }
 
+  // CPU picking secret (also resumes after refresh)
+  useEffect(() => {
+    if (mode !== 'cpu' || !cpuPickingSecret || !playerSecret || screen !== 'setup') return
+    const thinkMs = 4000 + Math.floor(Math.random() * 2000)
+    const t = setTimeout(() => {
+      setOpponentSecret(generateSecret(length))
+      setGuesses([])
+      const playerStarts = Math.random() < 0.5
+      setIsMyTurn(playerStarts)
+      setPresence(playerStarts ? 'online' : 'wait')
+      setTurnNumber(1)
+      setHintUsed(false)
+      setHint(null)
+      setWon(false)
+      setSecondsLeft(timer > 0 && playerStarts ? timer : null)
+      setCpuPickingSecret(false)
+      setScreen('play')
+      beep(muted, 540, 0.09)
+    }, thinkMs)
+    cpuPrepRef.current = t
+    return () => {
+      clearTimeout(t)
+      if (cpuPrepRef.current === t) cpuPrepRef.current = null
+    }
+  }, [mode, cpuPickingSecret, playerSecret, screen, length, timer, muted])
+
   const finishCpu = useCallback(
     (playerWon: boolean, oppSecret: string) => {
       setWon(playerWon)
@@ -419,7 +511,7 @@ export function GameApp() {
   )
 
   const handleGuess = async (value: string) => {
-    if (!isValidSecret(value, length)) return
+    if (!isValidGuess(value, length)) return
     setHint(null)
 
     if (mode === 'cpu') {
@@ -587,6 +679,60 @@ export function GameApp() {
     applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
   }
 
+  const sendChat = async (body: string) => {
+    if (!roomCode || !playerId) return false
+    const trimmed = body.trim()
+    if (!trimmed) return false
+
+    const localMsg: ChatMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      playerId,
+      playerName: nickname.trim() || 'لاعب',
+      body: trimmed,
+      createdAt: new Date().toISOString(),
+    }
+
+    try {
+      const { data } = await getSupabase().rpc('nd_send_chat', {
+        p_code: roomCode,
+        p_player_id: playerId,
+        p_body: trimmed,
+      })
+      if (data?.ok && data.message) {
+        const msg: ChatMessage = {
+          id: String(data.message.id),
+          playerId: data.message.playerId,
+          playerName: data.message.playerName,
+          body: data.message.body,
+          createdAt: data.message.createdAt,
+        }
+        appendChat(msg, roomCode)
+        await channelRef.current?.send({
+          type: 'broadcast',
+          event: 'chat',
+          payload: msg,
+        })
+        return true
+      }
+    } catch {
+      /* fall through to broadcast */
+    }
+
+    appendChat(localMsg, roomCode)
+    await channelRef.current?.send({
+      type: 'broadcast',
+      event: 'chat',
+      payload: localMsg,
+    })
+    return true
+  }
+
+  const exitMatch = async () => {
+    const ok = window.confirm('تبي تطلع من المواجهة؟')
+    if (!ok) return
+    await goHome()
+  }
+
   const cancelLobby = async () => {
     await goHome()
   }
@@ -606,7 +752,6 @@ export function GameApp() {
         },
       })
       if (err) {
-        // Google غير مفعّل بعد — نكمّل كضيف
         if (!nickname) setNickname('لاعب')
         enterAsGuest()
       }
@@ -616,32 +761,91 @@ export function GameApp() {
     }
   }
 
-  // Restore online session
+  // Persist CPU match across refresh / reconnect
+  useEffect(() => {
+    if (!booted || mode !== 'cpu') return
+    if (!['setup', 'play', 'finished'].includes(screen)) return
+    if (!playerSecret && screen !== 'setup') return
+    const session: CpuSession = {
+      v: 1,
+      screen,
+      length,
+      playerSecret,
+      opponentSecret,
+      guesses,
+      cpuCandidates,
+      isMyTurn,
+      turnNumber,
+      hintUsed,
+      marked: [...marked],
+      won,
+      cpuPickingSecret,
+    }
+    storageSet('nd_cpu_session', session)
+  }, [
+    booted,
+    mode,
+    screen,
+    length,
+    playerSecret,
+    opponentSecret,
+    guesses,
+    cpuCandidates,
+    isMyTurn,
+    turnNumber,
+    hintUsed,
+    marked,
+    won,
+    cpuPickingSecret,
+  ])
+
+  // Restore online or CPU session
   useEffect(() => {
     if (!booted) return
     const raw = localStorage.getItem('nd_active')
-    if (!raw) return
-    ;(async () => {
-      try {
-        const { code, playerId: pid } = JSON.parse(raw)
-        if (!code || !pid) return
-        const { data } = await getSupabase().rpc('nd_get_room', {
-          p_code: code,
-          p_player_id: pid,
-        })
-        if (!data?.ok) {
+    if (raw) {
+      ;(async () => {
+        try {
+          const { code, playerId: pid } = JSON.parse(raw)
+          if (!code || !pid) return
+          const { data } = await getSupabase().rpc('nd_get_room', {
+            p_code: code,
+            p_player_id: pid,
+          })
+          if (!data?.ok) {
+            localStorage.removeItem('nd_active')
+            return
+          }
+          setMode('room')
+          setPlayerId(pid)
+          storageSet('nd_logged', true)
+          applyOnlineRoom(data.room as RoomPayload, pid, { silent: true })
+          subscribeRoom(code, pid)
+        } catch {
           localStorage.removeItem('nd_active')
-          return
         }
-        setMode('room')
-        setPlayerId(pid)
-        applyOnlineRoom(data.room as RoomPayload, pid, { silent: true })
-        subscribeRoom(code, pid)
-        storageSet('nd_logged', true)
-      } catch {
-        localStorage.removeItem('nd_active')
-      }
-    })()
+      })()
+      return
+    }
+
+    const cpu = storageGet<CpuSession | null>('nd_cpu_session', null)
+    if (!cpu || cpu.v !== 1) return
+    if (!['setup', 'play', 'finished'].includes(cpu.screen)) return
+    setMode('cpu')
+    setLength(cpu.length)
+    setPlayerSecret(cpu.playerSecret || '')
+    setOpponentSecret(cpu.opponentSecret || '')
+    setGuesses(cpu.guesses || [])
+    setCpuCandidates(cpu.cpuCandidates?.length ? cpu.cpuCandidates : buildCandidates(cpu.length))
+    setIsMyTurn(cpu.isMyTurn)
+    setTurnNumber(cpu.turnNumber || 1)
+    setHintUsed(Boolean(cpu.hintUsed))
+    setMarked(new Set(cpu.marked || []))
+    setWon(Boolean(cpu.won))
+    setCpuPickingSecret(Boolean(cpu.cpuPickingSecret))
+    setPresence(cpu.isMyTurn ? 'online' : 'wait')
+    setScreen(cpu.screen)
+    storageSet('nd_logged', true)
   }, [booted, applyOnlineRoom, subscribeRoom])
 
   // Offline presence
@@ -651,6 +855,8 @@ export function GameApp() {
       if (mode === 'room' && roomCode && playerId) {
         subscribeRoom(roomCode, playerId)
         setPresence('online')
+      } else if (mode === 'cpu' && screen === 'play') {
+        setPresence(isMyTurn ? 'online' : 'wait')
       }
     }
     window.addEventListener('offline', onOff)
@@ -659,7 +865,7 @@ export function GameApp() {
       window.removeEventListener('offline', onOff)
       window.removeEventListener('online', onOn)
     }
-  }, [mode, roomCode, playerId, subscribeRoom])
+  }, [mode, roomCode, playerId, subscribeRoom, screen, isMyTurn])
 
   if (!booted) {
     return <main className="mx-auto flex min-h-dvh w-full max-w-md items-center justify-center bg-background" />
@@ -707,7 +913,7 @@ export function GameApp() {
           <SetupScreen
             length={length}
             onConfirm={confirmSecret}
-            onBack={goHome}
+            onBack={exitMatch}
             waitingOpponent={cpuPickingSecret}
           />
         )}
@@ -724,9 +930,13 @@ export function GameApp() {
             hint={hint || error || null}
             presence={presence}
             mySecret={playerSecret}
+            showChat={mode === 'room'}
+            unreadChat={unreadChat}
             onGuess={handleGuess}
             onHint={useHint}
             onOpenTracker={() => setTrackerOpen(true)}
+            onOpenChat={() => setChatOpen(true)}
+            onExit={exitMatch}
           />
         )}
 
@@ -753,6 +963,13 @@ export function GameApp() {
         length={length}
         crossed={marked}
         onToggle={toggleMark}
+      />
+      <ChatSheet
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        messages={chatMessages}
+        myPlayerId={playerId}
+        onSend={sendChat}
       />
       <Tutorial
         open={tutorialOpen}

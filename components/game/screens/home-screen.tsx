@@ -7,8 +7,8 @@ import {
   Users,
   Cpu,
   Sun,
-  Moon,
   MoonStar,
+  Trees,
   Flame,
   Trophy,
 } from 'lucide-react'
@@ -45,9 +45,9 @@ type HomeProps = {
 const DIFFICULTIES: Difficulty[] = [3, 4, 5]
 const TIMERS: TimerOption[] = [0, 30, 45, 60]
 const THEMES: { id: ThemeName; label: string; icon: typeof Sun }[] = [
-  { id: 'classic', label: 'كلاسيك', icon: Moon },
+  { id: 'classic', label: 'كلاسيك', icon: MoonStar },
+  { id: 'oasis', label: 'واحة', icon: Trees },
   { id: 'day', label: 'نهاري', icon: Sun },
-  { id: 'ramadan', label: 'رمضاني', icon: MoonStar },
 ]
 
 export function HomeScreen(props: HomeProps) {

@@ -1,6 +1,7 @@
 export type Difficulty = 3 | 4 | 5
 
-export type ThemeName = 'classic' | 'day' | 'ramadan'
+/** classic = رمضاني (الافتراضي)، oasis = الأخضر الغابي، day = نهاري */
+export type ThemeName = 'classic' | 'day' | 'oasis'
 
 export type TimerOption = 0 | 30 | 45 | 60
 
@@ -15,6 +16,14 @@ export type Screen =
 export type Guess = {
   value: string
   correct: number
+}
+
+export type ChatMessage = {
+  id: string
+  playerId: string
+  playerName: string
+  body: string
+  createdAt: string
 }
 
 export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
@@ -44,25 +53,25 @@ export function isAllSameDigit(value: string): boolean {
   return value.length > 1 && value.split('').every((d) => d === value[0])
 }
 
+/** Secret number: any digits of the right length (all-same allowed). */
 export function isValidSecret(value: string, length: number): boolean {
-  return (
-    value.length === length &&
-    /^\d+$/.test(value) &&
-    !isAllSameDigit(value)
-  )
+  return value.length === length && /^\d+$/.test(value)
+}
+
+/** Guess: all-same like 1111 is banned. */
+export function isValidGuess(value: string, length: number): boolean {
+  return isValidSecret(value, length) && !isAllSameDigit(value)
 }
 
 export function generateSecret(length: Difficulty): string {
   let value = ''
-  do {
-    value = ''
-    for (let i = 0; i < length; i++) {
-      value += Math.floor(Math.random() * 10).toString()
-    }
-  } while (isAllSameDigit(value))
+  for (let i = 0; i < length; i++) {
+    value += Math.floor(Math.random() * 10).toString()
+  }
   return value
 }
 
+/** Candidate pool for smart guessing — excludes illegal all-same guesses. */
 export function buildCandidates(length: number): string[] {
   const out: string[] = []
   const max = 10 ** length
@@ -83,7 +92,11 @@ export function filterCandidates(
 
 /** Pick a candidate that keeps the search space narrow. */
 export function pickSmartGuess(candidates: string[]): string {
-  if (!candidates.length) return generateSecret(4)
+  if (!candidates.length) {
+    let s = generateSecret(4)
+    while (isAllSameDigit(s)) s = generateSecret(4)
+    return s
+  }
   if (candidates.length === 1) return candidates[0]
   const sample =
     candidates.length <= 40
@@ -110,6 +123,13 @@ export function pickSmartGuess(candidates: string[]): string {
   return best
 }
 
+export function normalizeTheme(raw: unknown): ThemeName {
+  if (raw === 'day' || raw === 'oasis') return raw
+  if (raw === 'ramadan') return 'classic'
+  if (raw === 'classic') return 'classic'
+  return 'classic'
+}
+
 export function storageGet<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
   try {
@@ -128,4 +148,9 @@ export function storageGet<T>(key: string, fallback: T): T {
 export function storageSet(key: string, value: unknown) {
   if (typeof window === 'undefined') return
   localStorage.setItem(key, JSON.stringify(value))
+}
+
+export function storageRemove(key: string) {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem(key)
 }

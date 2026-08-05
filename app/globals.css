@@ -32,9 +32,35 @@
   --radius-2xl: calc(var(--radius) + 10px);
 }
 
-/* ===== Classic — dark forest (default) ===== */
+/* ===== Classic — رمضاني (الافتراضي) ===== */
 :root,
 [data-theme='classic'] {
+  color-scheme: dark;
+  --radius: 1rem;
+  --background: oklch(0.2 0.045 285);
+  --foreground: oklch(0.95 0.02 85);
+  --card: oklch(0.25 0.05 285);
+  --card-foreground: oklch(0.95 0.02 85);
+  --popover: oklch(0.23 0.05 285);
+  --popover-foreground: oklch(0.95 0.02 85);
+  --primary: oklch(0.82 0.15 82);
+  --primary-foreground: oklch(0.24 0.06 285);
+  --secondary: oklch(0.72 0.1 190);
+  --secondary-foreground: oklch(0.2 0.04 220);
+  --muted: oklch(0.3 0.045 285);
+  --muted-foreground: oklch(0.74 0.04 80);
+  --accent: oklch(0.36 0.07 288);
+  --accent-foreground: oklch(0.95 0.02 85);
+  --destructive: oklch(0.64 0.2 22);
+  --destructive-foreground: oklch(0.98 0.01 60);
+  --success: oklch(0.78 0.16 150);
+  --border: oklch(0.4 0.06 288);
+  --input: oklch(0.3 0.05 285);
+  --ring: oklch(0.82 0.15 82);
+}
+
+/* ===== Oasis — واحة (الأخضر السابق) ===== */
+[data-theme='oasis'] {
   color-scheme: dark;
   --radius: 1rem;
   --background: oklch(0.19 0.028 158);
@@ -85,32 +111,6 @@
   --ring: oklch(0.62 0.16 150);
 }
 
-/* ===== Ramadan — رمضاني ===== */
-[data-theme='ramadan'] {
-  color-scheme: dark;
-  --radius: 1rem;
-  --background: oklch(0.2 0.045 285);
-  --foreground: oklch(0.95 0.02 85);
-  --card: oklch(0.25 0.05 285);
-  --card-foreground: oklch(0.95 0.02 85);
-  --popover: oklch(0.23 0.05 285);
-  --popover-foreground: oklch(0.95 0.02 85);
-  --primary: oklch(0.82 0.15 82);
-  --primary-foreground: oklch(0.24 0.06 285);
-  --secondary: oklch(0.72 0.1 190);
-  --secondary-foreground: oklch(0.2 0.04 220);
-  --muted: oklch(0.3 0.045 285);
-  --muted-foreground: oklch(0.74 0.04 80);
-  --accent: oklch(0.36 0.07 288);
-  --accent-foreground: oklch(0.95 0.02 85);
-  --destructive: oklch(0.64 0.2 22);
-  --destructive-foreground: oklch(0.98 0.01 60);
-  --success: oklch(0.78 0.16 150);
-  --border: oklch(0.4 0.06 288);
-  --input: oklch(0.3 0.05 285);
-  --ring: oklch(0.82 0.15 82);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -119,11 +119,4 @@
   body {
     @apply bg-background text-foreground;
   }
-  body {
-    -webkit-tap-highlight-color: transparent;
-  }
-}
-
-@utility tabular {
-  font-variant-numeric: tabular-nums;
 }

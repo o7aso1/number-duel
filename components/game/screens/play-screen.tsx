@@ -1,7 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Lightbulb, Grid3x3, Timer, Send, Swords } from 'lucide-react'
+import {
+  Lightbulb,
+  Grid3x3,
+  Timer,
+  Send,
+  Swords,
+  LogOut,
+  MessageCircle,
+} from 'lucide-react'
 import { Keypad } from '@/components/game/ui/keypad'
 import { PresenceBanner, type PresenceKind } from '@/components/game/ui/presence-banner'
 import { isAllSameDigit, type Guess } from '@/lib/game'
@@ -18,9 +26,13 @@ type PlayProps = {
   hint: string | null
   presence: PresenceKind
   mySecret?: string
+  showChat?: boolean
+  unreadChat?: number
   onGuess: (value: string) => void
   onHint: () => void
   onOpenTracker: () => void
+  onOpenChat?: () => void
+  onExit: () => void
 }
 
 export function PlayScreen(props: PlayProps) {
@@ -39,6 +51,34 @@ export function PlayScreen(props: PlayProps) {
 
   return (
     <div className="flex flex-1 flex-col px-5 pb-6 pt-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={props.onExit}
+          className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-destructive"
+        >
+          <LogOut className="size-4" />
+          خروج
+        </button>
+        {props.showChat ? (
+          <button
+            type="button"
+            onClick={props.onOpenChat}
+            className="relative flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors"
+          >
+            <MessageCircle className="size-4 text-secondary" />
+            شات
+            {(props.unreadChat || 0) > 0 && (
+              <span className="absolute -top-1 -left-1 grid min-w-5 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                {props.unreadChat}
+              </span>
+            )}
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+
       {props.mySecret ? (
         <div className="mb-3 flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-2.5">
           <span className="text-sm text-muted-foreground">رقمك</span>
@@ -47,7 +87,7 @@ export function PlayScreen(props: PlayProps) {
           </span>
         </div>
       ) : null}
-      {/* Turn banner */}
+
       <div
         className={cn(
           'flex items-center justify-between rounded-2xl border px-4 py-3 transition-colors',
@@ -90,10 +130,8 @@ export function PlayScreen(props: PlayProps) {
         )}
       </div>
 
-      {/* Presence */}
       {props.presence !== 'online' && <PresenceBanner kind={props.presence} className="mt-3" />}
 
-      {/* Current guess slots */}
       <div className="mt-5 flex justify-center gap-2.5" dir="ltr">
         {slots.map((d, i) => (
           <div
@@ -112,7 +150,6 @@ export function PlayScreen(props: PlayProps) {
         <p className="mt-3 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>
       )}
 
-      {/* History (your guesses only) */}
       <div className="mt-4 flex-1">
         <p className="mb-2 text-sm font-medium text-muted-foreground">محاولاتك</p>
         <div className="flex max-h-44 flex-col gap-2 overflow-y-auto pl-1">
@@ -152,9 +189,9 @@ export function PlayScreen(props: PlayProps) {
         </div>
       </div>
 
-      {/* Tools */}
       <div className="mt-4 grid grid-cols-2 gap-3">
         <button
+          type="button"
           onClick={props.onHint}
           disabled={props.hintUsed || !props.isMyTurn}
           className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
@@ -163,6 +200,7 @@ export function PlayScreen(props: PlayProps) {
           تلميح {props.hintUsed && '(مُستخدَم)'}
         </button>
         <button
+          type="button"
           onClick={props.onOpenTracker}
           className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-sm font-semibold transition-all active:scale-95"
         >
@@ -171,7 +209,6 @@ export function PlayScreen(props: PlayProps) {
         </button>
       </div>
 
-      {/* Keypad */}
       <div className={cn('mt-4', !props.isMyTurn && 'pointer-events-none opacity-50')}>
         <Keypad
           onDigit={(d) => setValue((v) => (v.length < props.length ? v + d : v))}
@@ -181,6 +218,7 @@ export function PlayScreen(props: PlayProps) {
       </div>
 
       <button
+        type="button"
         onClick={submit}
         disabled={!canSubmit}
         className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98] disabled:opacity-40"

@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowRight, Lock, Check, ShieldAlert } from 'lucide-react'
+import { ArrowRight, Lock, Check } from 'lucide-react'
 import { Keypad } from '@/components/game/ui/keypad'
-import { isAllSameDigit } from '@/lib/game'
 import { cn } from '@/lib/utils'
 
 export function SetupScreen({
@@ -20,8 +19,7 @@ export function SetupScreen({
   const [value, setValue] = useState('')
   const slots = Array.from({ length }, (_, i) => value[i] ?? '')
   const full = value.length === length
-  const banned = full && isAllSameDigit(value)
-  const valid = full && !banned
+  const valid = full
 
   const addDigit = (d: string) => {
     if (waitingOpponent || value.length >= length) return
@@ -61,8 +59,9 @@ export function SetupScreen({
     <div className="flex flex-1 flex-col px-6 pb-8 pt-6">
       <header className="flex items-center">
         <button
+          type="button"
           onClick={onBack}
-          aria-label="رجوع"
+          aria-label="خروج من المواجهة"
           className="grid size-10 place-items-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowRight className="size-5" />
@@ -70,7 +69,6 @@ export function SetupScreen({
         <h1 className="mr-3 text-xl font-bold">اختر رقمك السري</h1>
       </header>
 
-      {/* Sticky number display */}
       <div className="sticky top-0 z-10 -mx-6 mb-2 bg-background/90 px-6 py-5 backdrop-blur">
         <p className="mb-3 text-center text-sm text-muted-foreground">رقمك</p>
         <div className="flex justify-center gap-2.5" dir="ltr">
@@ -92,20 +90,14 @@ export function SetupScreen({
       </div>
 
       <p className="mb-4 text-center text-sm text-muted-foreground text-pretty">
-        لا تخبر خصمك برقمك — سيحاول تخمينه.
+        تقدر تكرر نفس الرقم في سرك (مثل 1111). التخمين لاحقًا ممنوع فيه التكرار الكامل.
       </p>
 
       <div className="flex flex-1 flex-col justify-end gap-5">
-        {banned && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/15 px-4 py-2.5 text-sm font-medium text-destructive animate-in fade-in">
-            <ShieldAlert className="size-4 shrink-0" />
-            ممنوع تكرار نفس الرقم في كل الخانات
-          </div>
-        )}
-
         <Keypad onDigit={addDigit} onDelete={del} />
 
         <button
+          type="button"
           onClick={() => valid && onConfirm(value)}
           disabled={!valid}
           className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98] disabled:opacity-40"
