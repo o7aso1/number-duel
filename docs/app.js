@@ -1016,8 +1016,7 @@ function renderPlay() {
              <button class="btn btn-ghost" id="hintBtn" ${state.busy || state.room.hintUsed ? "disabled" : ""}>
                ${state.room.hintUsed ? "تم استخدام التلميح" : "تلميح (مرة واحدة)"}
              </button>
-             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}
-             ${state.error ? `<p class="error">${escapeHtml(state.error)}</p>` : ""}`
+             ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}`
           : `<div class="panel"><p class="hint waiting-dots">انتظر تخمين الخصم</p>
              ${state.lastHint ? `<p class="hint hint-ok">${escapeHtml(state.lastHint)}</p>` : ""}</div>`
       }
