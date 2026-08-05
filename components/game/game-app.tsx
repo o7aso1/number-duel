@@ -30,8 +30,11 @@ import { FinishedScreen } from '@/components/game/screens/finished-screen'
 import { InfoSheet } from '@/components/game/overlays/info-sheet'
 import { TrackerSheet } from '@/components/game/overlays/tracker-sheet'
 import { ChatSheet } from '@/components/game/overlays/chat-sheet'
+import { ConfirmExitSheet } from '@/components/game/overlays/confirm-exit-sheet'
+import { MatchSetupSheet, type MatchMode } from '@/components/game/overlays/match-setup-sheet'
 import { Tutorial } from '@/components/game/overlays/tutorial'
 import { getSupabase } from '@/lib/supabase'
+import { playSfx } from '@/lib/sfx'
 
 type Mode = 'cpu' | 'room'
 
@@ -72,24 +75,6 @@ function mapPresence(p?: string): PresenceKind {
   if (p === 'offline') return 'offline'
   if (p === 'slow') return 'wait'
   return 'online'
-}
-
-function beep(muted: boolean, freq = 520, dur = 0.08) {
-  if (muted || typeof window === 'undefined') return
-  try {
-    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-    const o = ctx.createOscillator()
-    const g = ctx.createGain()
-    o.frequency.value = freq
-    g.gain.value = 0.04
-    o.connect(g)
-    g.connect(ctx.destination)
-    o.start()
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur)
-    o.stop(ctx.currentTime + dur)
-  } catch {
-    /* ignore */
-  }
 }
 
 function vibrate(pattern: number | number[] = 25) {
@@ -139,6 +124,9 @@ export function GameApp() {
   const [chatOpen, setChatOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [unreadChat, setUnreadChat] = useState(0)
+  const [matchSetupOpen, setMatchSetupOpen] = useState(false)
+  const [matchMode, setMatchMode] = useState<MatchMode>('create')
+  const [exitOpen, setExitOpen] = useState(false)
 
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -230,7 +218,7 @@ export function GameApp() {
             return next
           })
           if (!opts?.silent) {
-            beep(muted, playerWon ? 880 : 320, 0.12)
+            playSfx(muted, playerWon ? 'win' : 'lose')
             vibrate(playerWon ? [40, 40, 80] : 40)
           }
         }
@@ -264,8 +252,11 @@ export function GameApp() {
       storageSet(`nd_chat_${code}`, next)
       return next
     })
-    if (!chatOpenRef.current) setUnreadChat((n) => n + 1)
-  }, [])
+    if (!chatOpenRef.current) {
+      setUnreadChat((n) => n + 1)
+      playSfx(muted, 'chat')
+    }
+  }, [muted])
 
   const loadChat = useCallback(async (code: string, pid: string) => {
     const cached = storageGet<ChatMessage[]>(`nd_chat_${code}`, [])
@@ -388,7 +379,9 @@ export function GameApp() {
     setCpuPickingSecret(false)
     setCpuCandidates(buildCandidates(difficulty))
     setOpponentSecret('')
+    setMatchSetupOpen(false)
     setScreen('setup')
+    playSfx(muted, 'click')
     if (!tutorialSeen) setTutorialOpen(true)
   }
 
@@ -403,6 +396,7 @@ export function GameApp() {
     setBusy(false)
     if (err || !data?.ok) {
       setError(err?.message || data?.error || 'فشل إنشاء الغرفة')
+      playSfx(muted, 'fail')
       return
     }
     setMode('room')
@@ -412,8 +406,70 @@ export function GameApp() {
       JSON.stringify({ code: data.room.code, playerId: data.playerId }),
     )
     resetSession()
+    setMatchSetupOpen(false)
     applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
     subscribeRoom(data.room.code, data.playerId)
+    playSfx(muted, 'success')
+  }
+
+  const randomMatch = async () => {
+    setBusy(true)
+    setError('')
+    const sb = getSupabase()
+    const name = nickname.trim() || 'لاعب'
+
+    try {
+      const { data: rooms } = await sb
+        .from('nd_rooms')
+        .select('code')
+        .eq('status', 'waiting')
+        .eq('digit_count', difficulty)
+        .is('p2_id', null)
+        .order('created_at', { ascending: true })
+        .limit(8)
+
+      const candidates = (rooms || []).map((r: { code: string }) => r.code).filter(Boolean)
+      for (const code of candidates) {
+        const { data, error: err } = await sb.rpc('nd_join_room', {
+          p_code: code,
+          p_name: name,
+        })
+        if (!err && data?.ok) {
+          setMode('room')
+          setPlayerId(data.playerId)
+          localStorage.setItem(
+            'nd_active',
+            JSON.stringify({ code: data.room.code, playerId: data.playerId }),
+          )
+          resetSession()
+          setMatchSetupOpen(false)
+          applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
+          subscribeRoom(data.room.code, data.playerId)
+          playSfx(muted, 'success')
+          setBusy(false)
+          if (!tutorialSeen) setTutorialOpen(true)
+          return
+        }
+      }
+    } catch {
+      /* fall through to create */
+    }
+
+    // No open room — create one and wait for a stranger
+    await createRoom()
+    setBusy(false)
+  }
+
+  const openMatchSetup = (mode: MatchMode) => {
+    setMatchMode(mode)
+    setMatchSetupOpen(true)
+    playSfx(muted, 'tap')
+  }
+
+  const confirmMatchSetup = async () => {
+    if (matchMode === 'cpu') startCpu()
+    else if (matchMode === 'random') await randomMatch()
+    else await createRoom()
   }
 
   const joinRoom = async (code: string) => {
@@ -429,6 +485,7 @@ export function GameApp() {
     setBusy(false)
     if (err || !data?.ok) {
       setError(err?.message || data?.error || 'فشل الانضمام')
+      playSfx(muted, 'fail')
       return
     }
     setMode('room')
@@ -440,6 +497,7 @@ export function GameApp() {
     resetSession()
     applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
     subscribeRoom(data.room.code, data.playerId)
+    playSfx(muted, 'success')
     if (!tutorialSeen) setTutorialOpen(true)
   }
 
@@ -449,7 +507,7 @@ export function GameApp() {
       setPlayerSecret(secret)
       setCpuPickingSecret(true)
       setError('')
-      beep(muted, 600, 0.08)
+      playSfx(muted, 'success')
       return
     }
     if (!roomCode || !playerId) return
@@ -465,7 +523,7 @@ export function GameApp() {
       return
     }
     applyOnlineRoom(data.room as RoomPayload, playerId)
-    beep(muted, 600, 0.08)
+    playSfx(muted, 'success')
   }
 
   // CPU picking secret (also resumes after refresh)
@@ -485,7 +543,7 @@ export function GameApp() {
       setSecondsLeft(timer > 0 && playerStarts ? timer : null)
       setCpuPickingSecret(false)
       setScreen('play')
-      beep(muted, 540, 0.09)
+      playSfx(muted, 'turn')
     }, thinkMs)
     cpuPrepRef.current = t
     return () => {
@@ -503,7 +561,7 @@ export function GameApp() {
         setBestStreak((b) => Math.max(b, next))
         return next
       })
-      beep(muted, playerWon ? 880 : 320, 0.12)
+      playSfx(muted, playerWon ? 'win' : 'lose')
       vibrate(playerWon ? [40, 40, 80] : 40)
       setScreen('finished')
     },
@@ -517,7 +575,7 @@ export function GameApp() {
     if (mode === 'cpu') {
       const correct = countCorrect(value, opponentSecret)
       setGuesses((g) => [...g, { value, correct }])
-      beep(muted, 420 + correct * 40, 0.07)
+      playSfx(muted, 'guess')
       vibrate(20)
       if (correct === length) {
         finishCpu(true, opponentSecret)
@@ -540,7 +598,7 @@ export function GameApp() {
       setError(err?.message || data?.error || 'فشل التخمين')
       return
     }
-    beep(muted, 420 + (data.correctPositions || 0) * 40, 0.07)
+    playSfx(muted, 'guess')
     vibrate(20)
     applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
   }
@@ -557,7 +615,7 @@ export function GameApp() {
       const correct = countCorrect(guess, playerSecret)
       pool = filterCandidates(pool, guess, correct)
       setCpuCandidates(pool)
-      beep(muted, 420 + correct * 40, 0.07)
+      playSfx(muted, 'guess')
       if (correct === length) {
         finishCpu(false, opponentSecret)
         return
@@ -567,7 +625,7 @@ export function GameApp() {
       setTurnNumber((n) => n + 1)
       setSecondsLeft(timer > 0 ? timer : null)
       vibrate(25)
-      beep(muted, 540, 0.09)
+      playSfx(muted, 'turn')
     }, thinkMs)
     return () => clearTimeout(t)
   }, [
@@ -631,7 +689,7 @@ export function GameApp() {
       const pick = positions[Math.floor(Math.random() * positions.length)]
       setHint(`الخانة رقم ${pick} من آخر تخمينك صحيحة (بدون كشف الرقم)`)
       setHintUsed(true)
-      beep(muted, 700, 0.1)
+      playSfx(muted, 'hint')
       return
     }
     if (!roomCode || !playerId) return
@@ -646,7 +704,7 @@ export function GameApp() {
     setHint(data.message || '')
     setHintUsed(true)
     if (data.room) applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
-    beep(muted, 700, 0.1)
+    playSfx(muted, 'hint')
   }
 
   const toggleMark = (key: string) => {
@@ -727,9 +785,14 @@ export function GameApp() {
     return true
   }
 
-  const exitMatch = async () => {
-    const ok = window.confirm('تبي تطلع من المواجهة؟')
-    if (!ok) return
+  const exitMatch = () => {
+    setExitOpen(true)
+    playSfx(muted, 'tap')
+  }
+
+  const confirmExit = async () => {
+    setExitOpen(false)
+    playSfx(muted, 'fail')
     await goHome()
   }
 
@@ -882,18 +945,15 @@ export function GameApp() {
           <HomeScreen
             nickname={nickname}
             onNickname={setNickname}
-            difficulty={difficulty}
-            onDifficulty={setDifficulty}
             theme={theme}
             onTheme={setTheme}
             muted={muted}
             onMuted={setMuted}
-            timer={timer}
-            onTimer={setTimer}
             streak={streak}
             bestStreak={bestStreak}
-            onCreateRoom={createRoom}
-            onPlayComputer={startCpu}
+            onCreateRoom={() => openMatchSetup('create')}
+            onRandomMatch={() => openMatchSetup('random')}
+            onPlayComputer={() => openMatchSetup('cpu')}
             onJoin={joinRoom}
             joinCode={joinCode}
             onJoinCode={setJoinCode}
@@ -970,6 +1030,22 @@ export function GameApp() {
         messages={chatMessages}
         myPlayerId={playerId}
         onSend={sendChat}
+      />
+      <MatchSetupSheet
+        open={matchSetupOpen}
+        onClose={() => setMatchSetupOpen(false)}
+        mode={matchMode}
+        difficulty={difficulty}
+        onDifficulty={setDifficulty}
+        timer={timer}
+        onTimer={setTimer}
+        busy={busy}
+        onConfirm={confirmMatchSetup}
+      />
+      <ConfirmExitSheet
+        open={exitOpen}
+        onClose={() => setExitOpen(false)}
+        onConfirm={confirmExit}
       />
       <Tutorial
         open={tutorialOpen}

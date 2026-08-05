@@ -11,30 +11,23 @@ import {
   Trees,
   Flame,
   Trophy,
+  Shuffle,
 } from 'lucide-react'
 import { Logo } from '@/components/game/ui/logo'
-import {
-  DIFFICULTY_LABELS,
-  type Difficulty,
-  type ThemeName,
-  type TimerOption,
-} from '@/lib/game'
+import type { ThemeName } from '@/lib/game'
 import { cn } from '@/lib/utils'
 
 type HomeProps = {
   nickname: string
   onNickname: (v: string) => void
-  difficulty: Difficulty
-  onDifficulty: (d: Difficulty) => void
   theme: ThemeName
   onTheme: (t: ThemeName) => void
   muted: boolean
   onMuted: (m: boolean) => void
-  timer: TimerOption
-  onTimer: (t: TimerOption) => void
   streak: number
   bestStreak: number
   onCreateRoom: () => void
+  onRandomMatch: () => void
   onPlayComputer: () => void
   onJoin: (code: string) => void
   joinCode: string
@@ -42,8 +35,6 @@ type HomeProps = {
   onInfo: () => void
 }
 
-const DIFFICULTIES: Difficulty[] = [3, 4, 5]
-const TIMERS: TimerOption[] = [0, 30, 45, 60]
 const THEMES: { id: ThemeName; label: string; icon: typeof Sun }[] = [
   { id: 'classic', label: 'كلاسيك', icon: MoonStar },
   { id: 'oasis', label: 'واحة', icon: Trees },
@@ -53,7 +44,6 @@ const THEMES: { id: ThemeName; label: string; icon: typeof Sun }[] = [
 export function HomeScreen(props: HomeProps) {
   return (
     <div className="flex flex-1 flex-col gap-5 px-5 pb-10 pt-6">
-      {/* Header */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <Logo className="scale-90" />
@@ -72,13 +62,11 @@ export function HomeScreen(props: HomeProps) {
         </div>
       </header>
 
-      {/* Streak stats */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard icon={Flame} label="سلسلتك" value={props.streak} tone="primary" />
         <StatCard icon={Trophy} label="أفضل سلسلة" value={props.bestStreak} tone="secondary" />
       </div>
 
-      {/* Nickname */}
       <Field label="اسمك في اللعبة">
         <input
           value={props.nickname}
@@ -89,46 +77,33 @@ export function HomeScreen(props: HomeProps) {
         />
       </Field>
 
-      {/* Difficulty */}
-      <Field label="الصعوبة">
-        <div className="grid grid-cols-3 gap-2">
-          {DIFFICULTIES.map((d) => (
-            <button
-              key={d}
-              onClick={() => props.onDifficulty(d)}
-              className={cn(
-                'flex flex-col items-center gap-0.5 rounded-xl border py-2.5 transition-all active:scale-95',
-                props.difficulty === d
-                  ? 'border-primary bg-primary/15 text-foreground'
-                  : 'border-border bg-card text-muted-foreground',
-              )}
-            >
-              <span className="text-sm font-medium">{DIFFICULTY_LABELS[d]}</span>
-              <span className="font-mono text-2xl font-bold tabular text-primary">{d}</span>
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {/* Primary actions */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-2.5">
         <button
+          type="button"
           onClick={props.onCreateRoom}
-          className="flex flex-col items-center gap-1.5 rounded-2xl bg-primary py-5 font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98]"
+          className="flex flex-col items-center gap-1.5 rounded-2xl bg-primary px-2 py-4 text-center text-sm font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98]"
         >
-          <Users className="size-6" />
+          <Users className="size-5" />
           إنشاء غرفة
         </button>
         <button
-          onClick={props.onPlayComputer}
-          className="flex flex-col items-center gap-1.5 rounded-2xl border border-secondary/40 bg-secondary/15 py-5 font-bold text-foreground transition-all active:scale-[0.98]"
+          type="button"
+          onClick={props.onRandomMatch}
+          className="flex flex-col items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/15 px-2 py-4 text-center text-sm font-bold text-foreground transition-all active:scale-[0.98]"
         >
-          <Cpu className="size-6 text-secondary" />
-          العب ضد الكمبيوتر
+          <Shuffle className="size-5 text-primary" />
+          لعب عشوائي
+        </button>
+        <button
+          type="button"
+          onClick={props.onPlayComputer}
+          className="flex flex-col items-center gap-1.5 rounded-2xl border border-secondary/40 bg-secondary/15 px-2 py-4 text-center text-sm font-bold text-foreground transition-all active:scale-[0.98]"
+        >
+          <Cpu className="size-5 text-secondary" />
+          ضد الكمبيوتر
         </button>
       </div>
 
-      {/* Join by code */}
       <Field label="عندك رمز غرفة؟">
         <div className="flex gap-2" dir="ltr">
           <input
@@ -138,6 +113,7 @@ export function HomeScreen(props: HomeProps) {
             className="w-full rounded-xl border border-border bg-input px-4 py-3 text-center font-mono text-xl font-bold tracking-[0.3em] tabular outline-none transition-colors placeholder:tracking-normal placeholder:text-muted-foreground/50 focus:border-primary"
           />
           <button
+            type="button"
             onClick={() => props.onJoin(props.joinCode)}
             disabled={props.joinCode.length < 5}
             className="shrink-0 rounded-xl bg-foreground px-6 font-bold text-background transition-all active:scale-95 disabled:opacity-40"
@@ -147,51 +123,28 @@ export function HomeScreen(props: HomeProps) {
         </div>
       </Field>
 
-      {/* Theme + timer */}
       <div className="rounded-2xl border border-border bg-card p-4">
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="mb-2 text-sm font-medium text-muted-foreground">الثيم</p>
-            <div className="grid grid-cols-3 gap-2">
-              {THEMES.map((t) => {
-                const Icon = t.icon
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => props.onTheme(t.id)}
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-all active:scale-95',
-                      props.theme === t.id
-                        ? 'border-primary bg-primary/15 text-foreground'
-                        : 'border-border text-muted-foreground',
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {t.label}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-sm font-medium text-muted-foreground">مؤقّت الدور</p>
-            <div className="grid grid-cols-4 gap-2">
-              {TIMERS.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => props.onTimer(t)}
-                  className={cn(
-                    'rounded-lg border py-2 text-sm font-semibold transition-all active:scale-95',
-                    props.timer === t
-                      ? 'border-primary bg-primary/15 text-foreground'
-                      : 'border-border text-muted-foreground',
-                  )}
-                >
-                  {t === 0 ? 'بدون' : <span className="font-mono tabular">{t}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+        <p className="mb-2 text-sm font-medium text-muted-foreground">الثيم</p>
+        <div className="grid grid-cols-3 gap-2">
+          {THEMES.map((t) => {
+            const Icon = t.icon
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => props.onTheme(t.id)}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-sm font-medium transition-all active:scale-95',
+                  props.theme === t.id
+                    ? 'border-primary bg-primary/15 text-foreground'
+                    : 'border-border text-muted-foreground',
+                )}
+              >
+                <Icon className="size-4" />
+                {t.label}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -220,6 +173,7 @@ function IconToggle({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-label={ariaLabel}
       aria-pressed={active}

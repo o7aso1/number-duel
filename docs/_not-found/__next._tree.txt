@@ -1,2 +1,2 @@
-:HL["/number-duel/_next/static/chunks/352b4gcyddpko.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":4176,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":4192,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":4256,"slots":null}}}}},"staleTime":300,"buildId":"-aXa7_H7nUsd-XXN1WnE9"}
+:HL["/number-duel/_next/static/chunks/10zurwfev6l1y.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":4176,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":4192,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":4256,"slots":null}}}}},"staleTime":300,"buildId":"z5PCdmu9AMR9Q1HVFW-FS"}
