@@ -50,7 +50,7 @@ export function PlayScreen(props: PlayProps) {
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-center px-5 py-4">
+    <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-5 py-4">
       <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <button

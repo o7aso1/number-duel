@@ -525,16 +525,45 @@ export function GameApp() {
   }
 
   const confirmSecret = async (secret: string) => {
-    if (!isValidSecret(secret, length)) return
-    if (mode === 'cpu') {
-      setPlayerSecret(secret)
-      setCpuPickingSecret(true)
-      setError('')
-      playSfx(muted, 'success')
+    const digits = length >= 3 && length <= 5 ? length : 4
+    if (!isValidSecret(secret, digits)) {
+      setError(`لازم تدخل ${digits} أرقام`)
+      playSfx(muted, 'fail')
       return
     }
-    if (!roomCode || !playerId) return
+    if (mode === 'cpu') {
+      setError('')
+      setLength(digits)
+      setPlayerSecret(secret)
+      setCpuPickingSecret(true)
+      playSfx(muted, 'success')
+      if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
+      const thinkMs = 4000 + Math.floor(Math.random() * 2000)
+      cpuPrepRef.current = setTimeout(() => {
+        setOpponentSecret(generateSecret(digits))
+        setGuesses([])
+        const playerStarts = Math.random() < 0.5
+        setIsMyTurn(playerStarts)
+        setPresence(playerStarts ? 'online' : 'wait')
+        setTurnNumber(1)
+        setHintUsed(false)
+        setHint(null)
+        setWon(false)
+        setSecondsLeft(timer > 0 && playerStarts ? timer : null)
+        setCpuPickingSecret(false)
+        setScreen('play')
+        playSfx(muted, 'turn')
+        cpuPrepRef.current = null
+      }, thinkMs)
+      return
+    }
+    if (!roomCode || !playerId) {
+      setError('الغرفة غير جاهزة — ارجع وحاول مرة ثانية')
+      playSfx(muted, 'fail')
+      return
+    }
     setBusy(true)
+    setError('')
     const { data, error: err } = await getSupabase().rpc('nd_set_secret', {
       p_code: roomCode,
       p_player_id: playerId,
@@ -543,18 +572,21 @@ export function GameApp() {
     setBusy(false)
     if (err || !data?.ok) {
       setError(err?.message || data?.error || 'ما قدرنا نثبت الرقم')
+      playSfx(muted, 'fail')
       return
     }
     applyOnlineRoom(data.room as RoomPayload, playerId)
     playSfx(muted, 'success')
   }
 
-  // CPU picking secret (also resumes after refresh)
+  // Resume CPU "picking secret" after refresh only
   useEffect(() => {
     if (mode !== 'cpu' || !cpuPickingSecret || !playerSecret || screen !== 'setup') return
-    const thinkMs = 4000 + Math.floor(Math.random() * 2000)
-    const t = setTimeout(() => {
-      setOpponentSecret(generateSecret(length))
+    if (cpuPrepRef.current) return
+    const digits = length >= 3 && length <= 5 ? length : 4
+    const thinkMs = 2500 + Math.floor(Math.random() * 1500)
+    cpuPrepRef.current = setTimeout(() => {
+      setOpponentSecret(generateSecret(digits as Difficulty))
       setGuesses([])
       const playerStarts = Math.random() < 0.5
       setIsMyTurn(playerStarts)
@@ -567,11 +599,10 @@ export function GameApp() {
       setCpuPickingSecret(false)
       setScreen('play')
       playSfx(muted, 'turn')
+      cpuPrepRef.current = null
     }, thinkMs)
-    cpuPrepRef.current = t
     return () => {
-      clearTimeout(t)
-      if (cpuPrepRef.current === t) cpuPrepRef.current = null
+      /* keep timeout across muted/timer re-renders; cleared on leave via resetSession */
     }
   }, [mode, cpuPickingSecret, playerSecret, screen, length, timer, muted])
 
@@ -959,8 +990,8 @@ export function GameApp() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-background">
-      <div className="flex flex-1 flex-col">
+    <main className="mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden bg-background">
+      <div className="flex min-h-0 flex-1 flex-col">
         {screen === 'login' && (
           <LoginScreen onGoogle={enterGoogle} onGuest={enterAsGuest} />
         )}
@@ -999,6 +1030,8 @@ export function GameApp() {
             onConfirm={confirmSecret}
             onBack={exitMatch}
             waitingOpponent={cpuPickingSecret}
+            error={error}
+            busy={busy}
           />
         )}
 
