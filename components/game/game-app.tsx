@@ -412,18 +412,28 @@ export function GameApp() {
     playSfx(muted, 'success')
   }
 
-  const randomMatch = async () => {
+  const openMatchSetup = (mode: MatchMode) => {
+    setMatchMode(mode)
+    setMatchSetupOpen(true)
+    playSfx(muted, 'tap')
+  }
+
+  const startRandomMatch = async () => {
+    setDifficulty(4)
+    setTimer(30)
+    playSfx(muted, 'tap')
     setBusy(true)
     setError('')
     const sb = getSupabase()
     const name = nickname.trim() || 'لاعب'
+    const digits = 4
 
     try {
       const { data: rooms } = await sb
         .from('nd_rooms')
         .select('code')
         .eq('status', 'waiting')
-        .eq('digit_count', difficulty)
+        .eq('digit_count', digits)
         .is('p2_id', null)
         .order('created_at', { ascending: true })
         .limit(8)
@@ -437,12 +447,13 @@ export function GameApp() {
         if (!err && data?.ok) {
           setMode('room')
           setPlayerId(data.playerId)
+          setLength(4)
+          setTimer(30)
           localStorage.setItem(
             'nd_active',
             JSON.stringify({ code: data.room.code, playerId: data.playerId }),
           )
           resetSession()
-          setMatchSetupOpen(false)
           applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
           subscribeRoom(data.room.code, data.playerId)
           playSfx(muted, 'success')
@@ -452,23 +463,35 @@ export function GameApp() {
         }
       }
     } catch {
-      /* fall through to create */
+      /* fall through */
     }
 
-    // No open room — create one and wait for a stranger
-    await createRoom()
+    const { data, error: err } = await sb.rpc('nd_create_room', {
+      p_name: name,
+      p_digit_count: digits,
+    })
     setBusy(false)
-  }
-
-  const openMatchSetup = (mode: MatchMode) => {
-    setMatchMode(mode)
-    setMatchSetupOpen(true)
-    playSfx(muted, 'tap')
+    if (err || !data?.ok) {
+      setError(err?.message || data?.error || 'فشل البحث عن خصم')
+      playSfx(muted, 'fail')
+      return
+    }
+    setMode('room')
+    setPlayerId(data.playerId)
+    setLength(4)
+    setTimer(30)
+    localStorage.setItem(
+      'nd_active',
+      JSON.stringify({ code: data.room.code, playerId: data.playerId }),
+    )
+    resetSession()
+    applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
+    subscribeRoom(data.room.code, data.playerId)
+    playSfx(muted, 'success')
   }
 
   const confirmMatchSetup = async () => {
     if (matchMode === 'cpu') startCpu()
-    else if (matchMode === 'random') await randomMatch()
     else await createRoom()
   }
 
@@ -648,6 +671,7 @@ export function GameApp() {
     if (secondsLeft === null) return
     if (secondsLeft <= 0) {
       setSecondsLeft(null)
+      playSfx(muted, 'turn')
       if (mode === 'cpu') {
         setIsMyTurn(false)
         setPresence('wait')
@@ -665,7 +689,7 @@ export function GameApp() {
     }
     const t = setTimeout(() => setSecondsLeft((s) => (s === null ? s : s - 1)), 1000)
     return () => clearTimeout(t)
-  }, [screen, isMyTurn, timer, secondsLeft, won, mode, roomCode, playerId, applyOnlineRoom])
+  }, [screen, isMyTurn, timer, secondsLeft, won, mode, roomCode, playerId, applyOnlineRoom, muted])
 
   // Reset timer when my turn starts in online
   useEffect(() => {
@@ -952,7 +976,7 @@ export function GameApp() {
             streak={streak}
             bestStreak={bestStreak}
             onCreateRoom={() => openMatchSetup('create')}
-            onRandomMatch={() => openMatchSetup('random')}
+            onRandomMatch={startRandomMatch}
             onPlayComputer={() => openMatchSetup('cpu')}
             onJoin={joinRoom}
             joinCode={joinCode}

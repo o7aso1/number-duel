@@ -1,11 +1,11 @@
 'use client'
 
-import { Users, Shuffle, Cpu, Check } from 'lucide-react'
+import { Users, Cpu, Check } from 'lucide-react'
 import { Sheet } from '@/components/game/ui/sheet'
 import { DIFFICULTY_LABELS, type Difficulty, type TimerOption } from '@/lib/game'
 import { cn } from '@/lib/utils'
 
-export type MatchMode = 'create' | 'random' | 'cpu'
+export type MatchMode = 'create' | 'cpu'
 
 const DIFFICULTIES: Difficulty[] = [3, 4, 5]
 const TIMERS: TimerOption[] = [0, 30, 45, 60]
@@ -15,7 +15,6 @@ const META: Record<
   { title: string; action: string; icon: typeof Users; showTimer: boolean }
 > = {
   create: { title: 'إنشاء غرفة', action: 'إنشاء', icon: Users, showTimer: true },
-  random: { title: 'لعب عشوائي', action: 'ابحث عن خصم', icon: Shuffle, showTimer: true },
   cpu: { title: 'ضد الكمبيوتر', action: 'ابدأ', icon: Cpu, showTimer: true },
 }
 

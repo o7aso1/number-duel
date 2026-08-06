@@ -82,8 +82,8 @@ export function Sheet({
         </div>
         <div
           className={cn(
-            'overflow-y-auto px-4 pb-5 pt-1',
-            centered ? 'max-h-[min(78dvh,640px)]' : 'max-h-[70vh]',
+            'px-4 pb-5 pt-1',
+            centered ? 'max-h-[min(88dvh,740px)] overflow-y-auto' : 'max-h-[70vh] overflow-y-auto',
           )}
         >
           {children}

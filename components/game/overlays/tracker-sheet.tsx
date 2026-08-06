@@ -25,10 +25,14 @@ export function TrackerSheet({
   const slots = Math.max(3, Math.min(5, length || 4))
 
   return (
-    <Sheet open={open} onClose={onClose} title="علّم الأرقام" placement="center">
-      <p className="mb-3 text-center text-xs text-muted-foreground">اضغط خانة لوضع ✕</p>
+    <Sheet open={open} onClose={onClose} title="علّم الأرقام" placement="center" className="max-w-sm">
+      <p className="mb-2 text-center text-[11px] text-muted-foreground">اضغط خانة لوضع ✕</p>
 
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${slots}, minmax(0, 1fr))` }} dir="ltr">
+      <div
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${slots}, minmax(0, 1fr))` }}
+        dir="ltr"
+      >
         {DIGITS.flatMap((digit) =>
           Array.from({ length: slots }, (_, slot) => {
             const key = cellKey(digit, slot)
@@ -45,7 +49,7 @@ export function TrackerSheet({
                     : `استبعاد الرقم ${digit} من الموضع ${slot + 1}`
                 }
                 className={cn(
-                  'relative grid aspect-square min-h-10 place-items-center rounded-xl border font-mono text-base font-bold tabular transition-all active:scale-95 sm:min-h-11 sm:text-lg',
+                  'relative grid aspect-square place-items-center rounded-md border font-mono text-xs font-bold tabular transition-all active:scale-95',
                   isCrossed
                     ? 'border-destructive/50 bg-destructive/10 text-muted-foreground/50'
                     : 'border-border bg-card text-foreground hover:border-primary/45',
@@ -55,7 +59,7 @@ export function TrackerSheet({
                 {isCrossed && (
                   <span
                     aria-hidden
-                    className="pointer-events-none absolute inset-0 grid place-items-center text-lg font-extrabold text-destructive"
+                    className="pointer-events-none absolute inset-0 grid place-items-center text-sm font-extrabold text-destructive"
                   >
                     ✕
                   </span>
