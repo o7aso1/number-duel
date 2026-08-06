@@ -12,6 +12,8 @@ type SheetProps = {
   className?: string
   /** bottom = phone drawer, center = modal like the old القائمة */
   placement?: 'bottom' | 'center'
+  /** Skip max-height scroll — for compact content that should fit the viewport */
+  compact?: boolean
 }
 
 export function Sheet({
@@ -21,6 +23,7 @@ export function Sheet({
   children,
   className,
   placement = 'bottom',
+  compact = false,
 }: SheetProps) {
   useEffect(() => {
     if (!open) return
@@ -65,9 +68,21 @@ export function Sheet({
             <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
           </div>
         )}
-        <div className="relative flex items-center gap-3 px-5 pt-4 pb-2 pl-14">
+        <div
+          className={cn(
+            'relative flex items-center gap-3 px-5 pb-2 pl-14',
+            compact ? 'pt-3' : 'pt-4',
+          )}
+        >
           {title ? (
-            <h2 className="min-w-0 flex-1 text-lg font-bold text-balance">{title}</h2>
+            <h2
+              className={cn(
+                'min-w-0 flex-1 font-bold text-balance',
+                compact ? 'text-base' : 'text-lg',
+              )}
+            >
+              {title}
+            </h2>
           ) : (
             <span className="flex-1" />
           )}
@@ -75,15 +90,22 @@ export function Sheet({
             type="button"
             onClick={onClose}
             aria-label="إغلاق"
-            className="absolute left-4 top-3.5 grid size-9 place-items-center rounded-xl border border-border bg-muted text-muted-foreground transition-colors hover:text-foreground"
+            className={cn(
+              'absolute left-4 grid place-items-center rounded-xl border border-border bg-muted text-muted-foreground transition-colors hover:text-foreground',
+              compact ? 'top-2.5 size-8' : 'top-3.5 size-9',
+            )}
           >
-            <X className="size-5" />
+            <X className={compact ? 'size-4' : 'size-5'} />
           </button>
         </div>
         <div
           className={cn(
-            'px-4 pb-5 pt-1',
-            centered ? 'max-h-[min(88dvh,740px)] overflow-y-auto' : 'max-h-[70vh] overflow-y-auto',
+            compact ? 'px-3 pb-3 pt-0.5' : 'px-4 pb-5 pt-1',
+            compact
+              ? 'overflow-visible'
+              : centered
+                ? 'max-h-[min(88dvh,740px)] overflow-y-auto'
+                : 'max-h-[70vh] overflow-y-auto',
           )}
         >
           {children}

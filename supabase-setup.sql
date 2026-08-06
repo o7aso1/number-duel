@@ -76,7 +76,8 @@ begin
   end if;
 end $$;
 
-create or replace function public.nd_valid_number(p_secret text, p_digits int)
+-- Digits only (all-same allowed) — used for secrets
+create or replace function public.nd_valid_digits(p_value text, p_digits int)
 returns boolean
 language plpgsql
 immutable
@@ -85,7 +86,21 @@ begin
   if p_digits not in (3, 4, 5) then
     return false;
   end if;
-  if p_secret is null or length(p_secret) <> p_digits or p_secret !~ ('^\d{' || p_digits || '}$') then
+  if p_value is null or length(p_value) <> p_digits or p_value !~ ('^\d{' || p_digits || '}$') then
+    return false;
+  end if;
+  return true;
+end;
+$$;
+
+-- Guesses: bans all-same like 1111
+create or replace function public.nd_valid_number(p_secret text, p_digits int)
+returns boolean
+language plpgsql
+immutable
+as $$
+begin
+  if not public.nd_valid_digits(p_secret, p_digits) then
     return false;
   end if;
   if p_secret = repeat(substr(p_secret, 1, 1), p_digits) then
@@ -285,11 +300,11 @@ begin
   if p_player_id is distinct from r.p1_id and p_player_id is distinct from r.p2_id then
     return jsonb_build_object('ok', false, 'error', 'لاعب غير موجود');
   end if;
-  if not public.nd_valid_number(p_secret, r.digit_count) then
+  if not public.nd_valid_digits(p_secret, r.digit_count) then
     return jsonb_build_object(
       'ok', false,
       'error',
-      'لازم ' || r.digit_count || ' أرقام، ومنوع تكرار نفس الرقم في كل الخانات'
+      'لازم ' || r.digit_count || ' أرقام صحيحة'
     );
   end if;
 
