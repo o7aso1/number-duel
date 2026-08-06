@@ -31,14 +31,14 @@ export function TrackerSheet({
       title="علّم الأرقام"
       placement="center"
       compact
-      className="max-w-[min(100%,22rem)]"
+      className="max-w-[min(100%,20rem)]"
     >
-      <p className="mb-1.5 text-center text-[10px] leading-tight text-muted-foreground">
+      <p className="mb-1 text-center text-[10px] leading-tight text-muted-foreground">
         اضغط خانة لوضع ✕
       </p>
 
       <div
-        className="grid gap-0.5"
+        className="grid gap-[3px]"
         style={{ gridTemplateColumns: `repeat(${slots}, minmax(0, 1fr))` }}
         dir="ltr"
       >
@@ -58,7 +58,8 @@ export function TrackerSheet({
                     : `استبعاد الرقم ${digit} من الموضع ${slot + 1}`
                 }
                 className={cn(
-                  'relative grid h-7 place-items-center rounded border font-mono text-[11px] font-bold tabular leading-none transition-all active:scale-95 sm:h-8 sm:text-xs',
+                  // Fixed height (not aspect-square) so 10 rows always fit without scroll
+                  'relative grid h-[26px] w-full place-items-center rounded-[7px] border font-mono text-[12px] font-bold tabular leading-none transition-all active:scale-95',
                   isCrossed
                     ? 'border-destructive/50 bg-destructive/10 text-muted-foreground/50'
                     : 'border-border bg-card text-foreground hover:border-primary/45',
@@ -68,7 +69,7 @@ export function TrackerSheet({
                 {isCrossed && (
                   <span
                     aria-hidden
-                    className="pointer-events-none absolute inset-0 grid place-items-center text-xs font-extrabold text-destructive sm:text-sm"
+                    className="pointer-events-none absolute inset-0 grid place-items-center text-[13px] font-extrabold text-destructive"
                   >
                     ✕
                   </span>

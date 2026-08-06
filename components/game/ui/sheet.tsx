@@ -100,12 +100,11 @@ export function Sheet({
         </div>
         <div
           className={cn(
-            compact ? 'px-3 pb-3 pt-0.5' : 'px-4 pb-5 pt-1',
-            compact
-              ? 'overflow-visible'
-              : centered
+            compact ? 'px-3 pb-3 pt-0.5 max-h-none overflow-visible' : 'px-4 pb-5 pt-1',
+            !compact &&
+              (centered
                 ? 'max-h-[min(88dvh,740px)] overflow-y-auto'
-                : 'max-h-[70vh] overflow-y-auto',
+                : 'max-h-[70vh] overflow-y-auto'),
           )}
         >
           {children}
