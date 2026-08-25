@@ -414,7 +414,7 @@ declare
   positions int[] := '{}';
   pick int;
   i int;
-  g text;
+  v_guess text;
   hint_used boolean;
 begin
   select * into r from public.nd_rooms where code = v_code for update;
@@ -433,9 +433,9 @@ begin
     return jsonb_build_object('ok', false, 'error', 'استخدمت التلميح مسبقاً بهالجولة');
   end if;
 
-  select g into last_guess
-  from jsonb_array_elements(r.guesses) with ordinality as t(g, ord)
-  where (g->>'by')::uuid = p_player_id
+  select elem into last_guess
+  from jsonb_array_elements(r.guesses) with ordinality as t(elem, ord)
+  where (elem->>'by')::uuid = p_player_id
   order by ord desc
   limit 1;
 
@@ -446,10 +446,10 @@ begin
     return jsonb_build_object('ok', false, 'error', 'آخر تخمين ما فيه أي خانة صحيحة');
   end if;
 
-  g := last_guess->>'guess';
+  v_guess := last_guess->>'guess';
   for i in 1..r.digit_count loop
     -- compare against opponent secret
-    if substr(g, i, 1) = (
+    if substr(v_guess, i, 1) = (
       select substr(s.secret, i, 1)
       from public.nd_secrets s
       where s.room_code = v_code
