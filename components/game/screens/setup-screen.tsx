@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ArrowRight, Lock, Check } from 'lucide-react'
 import { Keypad } from '@/components/game/ui/keypad'
+import { useDigitKeyboard } from '@/lib/use-digit-keyboard'
 import { cn } from '@/lib/utils'
 
 export function SetupScreen({
@@ -35,10 +36,18 @@ export function SetupScreen({
     setValue((v) => v.slice(0, -1))
   }
 
-  const submit = () => {
+  const submit = useCallback(() => {
     if (!valid || busy || waitingOpponent) return
     void onConfirm(value)
-  }
+  }, [valid, busy, waitingOpponent, onConfirm, value])
+
+  useDigitKeyboard({
+    enabled: !waitingOpponent && !busy,
+    maxLength: digitCount,
+    value,
+    onChange: setValue,
+    onSubmit: submit,
+  })
 
   if (waitingOpponent) {
     return (

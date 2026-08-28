@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Lightbulb,
   Grid3x3,
@@ -13,6 +13,7 @@ import { Keypad } from '@/components/game/ui/keypad'
 import { TurnTimerRing } from '@/components/game/ui/turn-timer-ring'
 import { PresenceBanner, type PresenceKind } from '@/components/game/ui/presence-banner'
 import { isAllSameDigit, type Guess } from '@/lib/game'
+import { useDigitKeyboard } from '@/lib/use-digit-keyboard'
 import { cn } from '@/lib/utils'
 
 type PlayProps = {
@@ -28,6 +29,7 @@ type PlayProps = {
   mySecret?: string
   showChat?: boolean
   unreadChat?: number
+  keyboardEnabled?: boolean
   onGuess: (value: string) => void
   onHint: () => void
   onOpenTracker: () => void
@@ -43,11 +45,20 @@ export function PlayScreen(props: PlayProps) {
 
   const slots = Array.from({ length: props.length }, (_, i) => value[i] ?? '')
 
-  const submit = () => {
-    if (!canSubmit) return
+  const submit = useCallback(() => {
+    if (!props.isMyTurn) return
+    if (value.length !== props.length || isAllSameDigit(value)) return
     props.onGuess(value)
     setValue('')
-  }
+  }, [props.isMyTurn, props.length, props.onGuess, value])
+
+  useDigitKeyboard({
+    enabled: Boolean(props.keyboardEnabled && props.isMyTurn),
+    maxLength: props.length,
+    value,
+    onChange: setValue,
+    onSubmit: submit,
+  })
 
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-5 py-4">

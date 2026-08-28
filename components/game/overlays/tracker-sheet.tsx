@@ -48,7 +48,10 @@ export function TrackerSheet({
               <button
                 key={key}
                 type="button"
-                onClick={() => onToggle(key)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggle(key)
+                }}
                 aria-pressed={isCrossed}
                 aria-label={
                   isCrossed

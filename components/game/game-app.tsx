@@ -40,6 +40,7 @@ type Mode = 'cpu' | 'room'
 
 type CpuSession = {
   v: 1
+  matchGen: number
   screen: Screen
   length: Difficulty
   playerSecret: string
@@ -133,6 +134,9 @@ export function GameApp() {
   const streakKeyRef = useRef<string | null>(null)
   const cpuPrepRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const chatOpenRef = useRef(false)
+  const sessionBootstrappedRef = useRef(false)
+  const matchGenRef = useRef(0)
+  const trackerScopeRef = useRef('')
 
   useEffect(() => {
     chatOpenRef.current = chatOpen
@@ -198,6 +202,20 @@ export function GameApp() {
       setTurnNumber(room.turnNumber || 1)
       setIsMyTurn(room.turn === pid)
       setPresence(mapPresence(room.opponentPresence))
+
+      const guessCount = (room.guesses || []).length
+      const freshMatch =
+        room.status === 'setup' ||
+        (room.status === 'playing' && guessCount === 0 && (room.turnNumber || 1) <= 1)
+      const trackerScope = `${room.code}:${room.status}:${room.turnNumber ?? 0}:${guessCount}`
+      if (freshMatch) {
+        if (trackerScopeRef.current !== trackerScope) {
+          trackerScopeRef.current = trackerScope
+          setMarked(new Set())
+        }
+      } else {
+        trackerScopeRef.current = trackerScope
+      }
 
       if (room.status === 'waiting') setScreen('lobby')
       else if (room.status === 'setup') setScreen('setup')
@@ -326,6 +344,8 @@ export function GameApp() {
       clearTimeout(cpuPrepRef.current)
       cpuPrepRef.current = null
     }
+    matchGenRef.current += 1
+    trackerScopeRef.current = ''
     setCpuPickingSecret(false)
     setGuesses([])
     setCpuCandidates([])
@@ -542,6 +562,8 @@ export function GameApp() {
       cpuPrepRef.current = setTimeout(() => {
         setOpponentSecret(generateSecret(digits))
         setGuesses([])
+        setMarked(new Set())
+        trackerScopeRef.current = `cpu:${matchGenRef.current}`
         const playerStarts = Math.random() < 0.5
         setIsMyTurn(playerStarts)
         setPresence(playerStarts ? 'online' : 'wait')
@@ -588,6 +610,8 @@ export function GameApp() {
     cpuPrepRef.current = setTimeout(() => {
       setOpponentSecret(generateSecret(digits as Difficulty))
       setGuesses([])
+      setMarked(new Set())
+      trackerScopeRef.current = `cpu:${matchGenRef.current}`
       const playerStarts = Math.random() < 0.5
       setIsMyTurn(playerStarts)
       setPresence(playerStarts ? 'online' : 'wait')
@@ -762,14 +786,14 @@ export function GameApp() {
     playSfx(muted, 'hint')
   }
 
-  const toggleMark = (key: string) => {
+  const toggleMark = useCallback((key: string) => {
     setMarked((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
 
   const rematch = async () => {
     if (mode === 'cpu') {
@@ -886,6 +910,7 @@ export function GameApp() {
     if (!playerSecret && screen !== 'setup') return
     const session: CpuSession = {
       v: 1,
+      matchGen: matchGenRef.current,
       screen,
       length,
       playerSecret,
@@ -917,9 +942,11 @@ export function GameApp() {
     cpuPickingSecret,
   ])
 
-  // Restore online or CPU session
+  // Restore online or CPU session — once on boot only (avoid overwriting tracker mid-match)
   useEffect(() => {
-    if (!booted) return
+    if (!booted || sessionBootstrappedRef.current) return
+    sessionBootstrappedRef.current = true
+
     const raw = localStorage.getItem('nd_active')
     if (raw) {
       ;(async () => {
@@ -950,6 +977,8 @@ export function GameApp() {
     if (!cpu || cpu.v !== 1) return
     if (!['setup', 'play', 'finished'].includes(cpu.screen)) return
     setMode('cpu')
+    matchGenRef.current = cpu.matchGen ?? 0
+    trackerScopeRef.current = `cpu:${cpu.matchGen ?? 0}`
     setLength(cpu.length)
     setPlayerSecret(cpu.playerSecret || '')
     setOpponentSecret(cpu.opponentSecret || '')
@@ -1049,6 +1078,7 @@ export function GameApp() {
             mySecret={playerSecret}
             showChat={mode === 'room'}
             unreadChat={unreadChat}
+            keyboardEnabled={!trackerOpen && !chatOpen && !exitOpen && !matchSetupOpen}
             onGuess={handleGuess}
             onHint={useHint}
             onOpenTracker={() => setTrackerOpen(true)}
