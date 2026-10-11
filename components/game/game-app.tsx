@@ -67,6 +67,8 @@ type RoomPayload = {
   mySecret: string | null
   opponentSecret: string | null
   opponentPresence?: string
+  timerSeconds?: number
+  secondsLeft?: number | null
   guesses: { guess: string; correctPositions: number }[]
   players: { id: string; name: string; ready: boolean; isYou: boolean; hasSecret: boolean }[]
 }
@@ -107,6 +109,7 @@ export function GameApp() {
   const [mode, setMode] = useState<Mode>('cpu')
   const [roomCode, setRoomCode] = useState('')
   const [playerId, setPlayerId] = useState<string | null>(null)
+  const [playerToken, setPlayerToken] = useState<string | null>(null)
   const [length, setLength] = useState<Difficulty>(4)
   const [playerSecret, setPlayerSecret] = useState('')
   const [opponentSecret, setOpponentSecret] = useState('')
@@ -129,7 +132,6 @@ export function GameApp() {
   const [matchMode, setMatchMode] = useState<MatchMode>('create')
   const [exitOpen, setExitOpen] = useState(false)
 
-  const channelRef = useRef<ReturnType<ReturnType<typeof getSupabase>['channel']> | null>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const streakKeyRef = useRef<string | null>(null)
   const cpuPrepRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -175,11 +177,6 @@ export function GameApp() {
   useEffect(() => storageSet('nd_best_streak', bestStreak), [bestStreak])
 
   const stopRealtime = useCallback(() => {
-    const sb = getSupabase()
-    if (channelRef.current) {
-      sb.removeChannel(channelRef.current)
-      channelRef.current = null
-    }
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current)
       heartbeatRef.current = null
@@ -202,6 +199,8 @@ export function GameApp() {
       setTurnNumber(room.turnNumber || 1)
       setIsMyTurn(room.turn === pid)
       setPresence(mapPresence(room.opponentPresence))
+      setTimer((room.timerSeconds as TimerOption) || 0)
+      setSecondsLeft(room.secondsLeft ?? null)
 
       const guessCount = (room.guesses || []).length
       const freshMatch =
@@ -221,9 +220,6 @@ export function GameApp() {
       else if (room.status === 'setup') setScreen('setup')
       else if (room.status === 'playing') {
         setScreen('play')
-        if (room.turn === pid && timer > 0 && !opts?.silent) {
-          setSecondsLeft(timer)
-        }
       } else if (room.status === 'finished') {
         const playerWon = room.winner === pid
         setWon(playerWon)
@@ -243,24 +239,7 @@ export function GameApp() {
         setScreen('finished')
       }
     },
-    [muted, timer],
-  )
-
-  const startHeartbeat = useCallback(
-    (code: string, pid: string) => {
-      if (heartbeatRef.current) clearInterval(heartbeatRef.current)
-      const tick = async () => {
-        const sb = getSupabase()
-        const { data } = await sb.rpc('nd_heartbeat', {
-          p_code: code,
-          p_player_id: pid,
-        })
-        if (data?.ok && data.room) applyOnlineRoom(data.room as RoomPayload, pid, { silent: true })
-      }
-      tick()
-      heartbeatRef.current = setInterval(tick, 5000)
-    },
-    [applyOnlineRoom],
+    [muted],
   )
 
   const appendChat = useCallback((msg: ChatMessage, code: string) => {
@@ -276,13 +255,14 @@ export function GameApp() {
     }
   }, [muted])
 
-  const loadChat = useCallback(async (code: string, pid: string) => {
+  const loadChat = useCallback(async (code: string, pid: string, token: string) => {
     const cached = storageGet<ChatMessage[]>(`nd_chat_${code}`, [])
     if (cached.length) setChatMessages(cached)
     try {
       const { data } = await getSupabase().rpc('nd_list_chat', {
         p_code: code,
         p_player_id: pid,
+        p_player_token: token,
         p_limit: 80,
       })
       if (data?.ok && Array.isArray(data.messages)) {
@@ -305,38 +285,36 @@ export function GameApp() {
         storageSet(`nd_chat_${code}`, msgs)
       }
     } catch {
-      /* broadcast-only fallback */
+      /* keep the cached messages while temporarily offline */
     }
   }, [])
 
-  const subscribeRoom = useCallback(
-    (code: string, pid: string) => {
-      const sb = getSupabase()
-      if (channelRef.current) sb.removeChannel(channelRef.current)
-      channelRef.current = sb
-        .channel(`nd-${code}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'nd_rooms', filter: `code=eq.${code}` },
-          async () => {
-            const { data } = await sb.rpc('nd_get_room', {
-              p_code: code,
-              p_player_id: pid,
-            })
-            if (data?.ok && data.room) applyOnlineRoom(data.room as RoomPayload, pid)
-          },
-        )
-        .on('broadcast', { event: 'chat' }, ({ payload }) => {
-          const msg = payload as ChatMessage
-          if (!msg?.id || !msg.body) return
-          if (msg.playerId === pid) return
-          appendChat(msg, code)
+  const startHeartbeat = useCallback(
+    (code: string, pid: string, token: string) => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current)
+      const tick = async () => {
+        const { data } = await getSupabase().rpc('nd_heartbeat', {
+          p_code: code,
+          p_player_id: pid,
+          p_player_token: token,
         })
-        .subscribe()
-      startHeartbeat(code, pid)
-      void loadChat(code, pid)
+        if (data?.ok && data.room) {
+          applyOnlineRoom(data.room as RoomPayload, pid, { silent: true })
+          await loadChat(code, pid, token)
+        }
+      }
+      void tick()
+      heartbeatRef.current = setInterval(tick, 2500)
     },
-    [applyOnlineRoom, startHeartbeat, appendChat, loadChat],
+    [applyOnlineRoom, loadChat],
+  )
+
+  const subscribeRoom = useCallback(
+    (code: string, pid: string, token: string) => {
+      startHeartbeat(code, pid, token)
+      void loadChat(code, pid, token)
+    },
+    [startHeartbeat, loadChat],
   )
 
   const resetSession = useCallback(() => {
@@ -368,11 +346,12 @@ export function GameApp() {
   }, [])
 
   const leaveOnline = useCallback(async () => {
-    if (mode === 'room' && roomCode && playerId) {
+    if (mode === 'room' && roomCode && playerId && playerToken) {
       try {
         await getSupabase().rpc('nd_leave_room', {
           p_code: roomCode,
           p_player_id: playerId,
+          p_player_token: playerToken,
         })
       } catch {
         /* ignore */
@@ -380,12 +359,13 @@ export function GameApp() {
     }
     stopRealtime()
     localStorage.removeItem('nd_active')
-  }, [mode, roomCode, playerId, stopRealtime])
+  }, [mode, roomCode, playerId, playerToken, stopRealtime])
 
   const goHome = async () => {
     await leaveOnline()
     resetSession()
     setPlayerId(null)
+    setPlayerToken(null)
     setRoomCode('')
     setMode('cpu')
     setScreen('home')
@@ -412,6 +392,7 @@ export function GameApp() {
     const { data, error: err } = await getSupabase().rpc('nd_create_room', {
       p_name: name,
       p_digit_count: difficulty,
+      p_timer_seconds: timer,
     })
     setBusy(false)
     if (err || !data?.ok) {
@@ -421,14 +402,15 @@ export function GameApp() {
     }
     setMode('room')
     setPlayerId(data.playerId)
+    setPlayerToken(data.playerToken)
     localStorage.setItem(
       'nd_active',
-      JSON.stringify({ code: data.room.code, playerId: data.playerId }),
+      JSON.stringify({ code: data.room.code, playerId: data.playerId, playerToken: data.playerToken }),
     )
     resetSession()
     setMatchSetupOpen(false)
     applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
-    subscribeRoom(data.room.code, data.playerId)
+    subscribeRoom(data.room.code, data.playerId, data.playerToken)
     playSfx(muted, 'success')
   }
 
@@ -448,47 +430,10 @@ export function GameApp() {
     const name = nickname.trim() || 'لاعب'
     const digits = 4
 
-    try {
-      const { data: rooms } = await sb
-        .from('nd_rooms')
-        .select('code')
-        .eq('status', 'waiting')
-        .eq('digit_count', digits)
-        .is('p2_id', null)
-        .order('created_at', { ascending: true })
-        .limit(8)
-
-      const candidates = (rooms || []).map((r: { code: string }) => r.code).filter(Boolean)
-      for (const code of candidates) {
-        const { data, error: err } = await sb.rpc('nd_join_room', {
-          p_code: code,
-          p_name: name,
-        })
-        if (!err && data?.ok) {
-          setMode('room')
-          setPlayerId(data.playerId)
-          setLength(4)
-          setTimer(30)
-          localStorage.setItem(
-            'nd_active',
-            JSON.stringify({ code: data.room.code, playerId: data.playerId }),
-          )
-          resetSession()
-          applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
-          subscribeRoom(data.room.code, data.playerId)
-          playSfx(muted, 'success')
-          setBusy(false)
-          if (!tutorialSeen) setTutorialOpen(true)
-          return
-        }
-      }
-    } catch {
-      /* fall through */
-    }
-
-    const { data, error: err } = await sb.rpc('nd_create_room', {
+    const { data, error: err } = await sb.rpc('nd_random_match', {
       p_name: name,
       p_digit_count: digits,
+      p_timer_seconds: 30,
     })
     setBusy(false)
     if (err || !data?.ok) {
@@ -498,15 +443,16 @@ export function GameApp() {
     }
     setMode('room')
     setPlayerId(data.playerId)
+    setPlayerToken(data.playerToken)
     setLength(4)
     setTimer(30)
     localStorage.setItem(
       'nd_active',
-      JSON.stringify({ code: data.room.code, playerId: data.playerId }),
+      JSON.stringify({ code: data.room.code, playerId: data.playerId, playerToken: data.playerToken }),
     )
     resetSession()
     applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
-    subscribeRoom(data.room.code, data.playerId)
+    subscribeRoom(data.room.code, data.playerId, data.playerToken)
     playSfx(muted, 'success')
   }
 
@@ -533,13 +479,14 @@ export function GameApp() {
     }
     setMode('room')
     setPlayerId(data.playerId)
+    setPlayerToken(data.playerToken)
     localStorage.setItem(
       'nd_active',
-      JSON.stringify({ code: data.room.code, playerId: data.playerId }),
+      JSON.stringify({ code: data.room.code, playerId: data.playerId, playerToken: data.playerToken }),
     )
     resetSession()
     applyOnlineRoom(data.room as RoomPayload, data.playerId, { silent: true })
-    subscribeRoom(data.room.code, data.playerId)
+    subscribeRoom(data.room.code, data.playerId, data.playerToken)
     playSfx(muted, 'success')
     if (!tutorialSeen) setTutorialOpen(true)
   }
@@ -579,7 +526,7 @@ export function GameApp() {
       }, thinkMs)
       return
     }
-    if (!roomCode || !playerId) {
+    if (!roomCode || !playerId || !playerToken) {
       setError('الغرفة غير جاهزة — ارجع وحاول مرة ثانية')
       playSfx(muted, 'fail')
       return
@@ -589,6 +536,7 @@ export function GameApp() {
     const { data, error: err } = await getSupabase().rpc('nd_set_secret', {
       p_code: roomCode,
       p_player_id: playerId,
+      p_player_token: playerToken,
       p_secret: secret,
     })
     setBusy(false)
@@ -664,11 +612,12 @@ export function GameApp() {
       return
     }
 
-    if (!roomCode || !playerId) return
+    if (!roomCode || !playerId || !playerToken) return
     setBusy(true)
     const { data, error: err } = await getSupabase().rpc('nd_guess', {
       p_code: roomCode,
       p_player_id: playerId,
+      p_player_token: playerToken,
       p_guess: value,
     })
     setBusy(false)
@@ -733,25 +682,12 @@ export function GameApp() {
         setError('انتهى الوقت — انتقل الدور')
         return
       }
-      if (roomCode && playerId) {
-        getSupabase()
-          .rpc('nd_skip_turn', { p_code: roomCode, p_player_id: playerId })
-          .then(({ data }) => {
-            if (data?.ok) applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
-          })
-      }
+      // The database owns the deadline and advances an expired turn on the next poll.
       return
     }
     const t = setTimeout(() => setSecondsLeft((s) => (s === null ? s : s - 1)), 1000)
     return () => clearTimeout(t)
   }, [screen, isMyTurn, timer, secondsLeft, won, mode, roomCode, playerId, applyOnlineRoom, muted])
-
-  // Reset timer when my turn starts in online
-  useEffect(() => {
-    if (screen === 'play' && isMyTurn && timer > 0 && mode === 'room') {
-      setSecondsLeft(timer)
-    }
-  }, [isMyTurn, screen, timer, mode, turnNumber])
 
   const useHint = async () => {
     if (hintUsed) return
@@ -771,10 +707,11 @@ export function GameApp() {
       playSfx(muted, 'hint')
       return
     }
-    if (!roomCode || !playerId) return
+    if (!roomCode || !playerId || !playerToken) return
     const { data, error: err } = await getSupabase().rpc('nd_use_hint', {
       p_code: roomCode,
       p_player_id: playerId,
+      p_player_token: playerToken,
     })
     if (err || !data?.ok) {
       setHint(err?.message || data?.error || 'فشل التلميح')
@@ -803,10 +740,11 @@ export function GameApp() {
       setScreen('setup')
       return
     }
-    if (!roomCode || !playerId) return
+    if (!roomCode || !playerId || !playerToken) return
     const { data, error: err } = await getSupabase().rpc('nd_rematch', {
       p_code: roomCode,
       p_player_id: playerId,
+      p_player_token: playerToken,
     })
     if (err || !data?.ok) {
       setError(err?.message || data?.error || 'فشل إعادة اللعب')
@@ -817,22 +755,15 @@ export function GameApp() {
   }
 
   const sendChat = async (body: string) => {
-    if (!roomCode || !playerId) return false
+    if (!roomCode || !playerId || !playerToken) return false
     const trimmed = body.trim()
     if (!trimmed) return false
-
-    const localMsg: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      playerId,
-      playerName: nickname.trim() || 'لاعب',
-      body: trimmed,
-      createdAt: new Date().toISOString(),
-    }
 
     try {
       const { data } = await getSupabase().rpc('nd_send_chat', {
         p_code: roomCode,
         p_player_id: playerId,
+        p_player_token: playerToken,
         p_body: trimmed,
       })
       if (data?.ok && data.message) {
@@ -844,24 +775,12 @@ export function GameApp() {
           createdAt: data.message.createdAt,
         }
         appendChat(msg, roomCode)
-        await channelRef.current?.send({
-          type: 'broadcast',
-          event: 'chat',
-          payload: msg,
-        })
         return true
       }
     } catch {
-      /* fall through to broadcast */
+      return false
     }
-
-    appendChat(localMsg, roomCode)
-    await channelRef.current?.send({
-      type: 'broadcast',
-      event: 'chat',
-      payload: localMsg,
-    })
-    return true
+    return false
   }
 
   const exitMatch = () => {
@@ -951,11 +870,15 @@ export function GameApp() {
     if (raw) {
       ;(async () => {
         try {
-          const { code, playerId: pid } = JSON.parse(raw)
-          if (!code || !pid) return
+          const { code, playerId: pid, playerToken: token } = JSON.parse(raw)
+          if (!code || !pid || !token) {
+            localStorage.removeItem('nd_active')
+            return
+          }
           const { data } = await getSupabase().rpc('nd_get_room', {
             p_code: code,
             p_player_id: pid,
+            p_player_token: token,
           })
           if (!data?.ok) {
             localStorage.removeItem('nd_active')
@@ -963,9 +886,10 @@ export function GameApp() {
           }
           setMode('room')
           setPlayerId(pid)
+          setPlayerToken(token)
           storageSet('nd_logged', true)
           applyOnlineRoom(data.room as RoomPayload, pid, { silent: true })
-          subscribeRoom(code, pid)
+          subscribeRoom(code, pid, token)
         } catch {
           localStorage.removeItem('nd_active')
         }
@@ -999,8 +923,8 @@ export function GameApp() {
   useEffect(() => {
     const onOff = () => setPresence('offline')
     const onOn = () => {
-      if (mode === 'room' && roomCode && playerId) {
-        subscribeRoom(roomCode, playerId)
+      if (mode === 'room' && roomCode && playerId && playerToken) {
+        subscribeRoom(roomCode, playerId, playerToken)
         setPresence('online')
       } else if (mode === 'cpu' && screen === 'play') {
         setPresence(isMyTurn ? 'online' : 'wait')
@@ -1012,7 +936,7 @@ export function GameApp() {
       window.removeEventListener('offline', onOff)
       window.removeEventListener('online', onOn)
     }
-  }, [mode, roomCode, playerId, subscribeRoom, screen, isMyTurn])
+  }, [mode, roomCode, playerId, playerToken, subscribeRoom, screen, isMyTurn])
 
   if (!booted) {
     return <main className="mx-auto flex min-h-dvh w-full max-w-md items-center justify-center bg-background" />

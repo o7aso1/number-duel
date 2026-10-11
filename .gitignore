@@ -18,6 +18,7 @@ node_modules
 .next/
 .DS_Store
 out/
+*.tsbuildinfo
 .backup-old-static/
 web/
 pnpm-lock.yaml

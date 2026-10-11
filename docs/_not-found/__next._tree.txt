@@ -1,2 +1,7 @@
-:HL["/number-duel/_next/static/chunks/2334h0qw-59e-.css","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":4176,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":4192,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":4256,"slots":null}}}}},"staleTime":300,"buildId":"gzjUdX65ELvuKnHfLx0WI"}
+:HL["/number-duel/_next/static/media/01f0c602c274ea55-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/number-duel/_next/static/media/350b852752f8489d-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/number-duel/_next/static/media/bb3ef058b751a6ad-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
+:HL["/number-duel/_next/static/css/b0c10c4b2b51dac8.css","style"]
+2:[["children",{"s":"__PAGE__","h":160}]]
+1:[["children",{"s":"_not-found","h":96,"c":"$Q2"}]]
+0:{"b":"tbIw0Z-Cdx2u4-z5dxwkw","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

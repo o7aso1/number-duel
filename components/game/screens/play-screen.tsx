@@ -38,19 +38,20 @@ type PlayProps = {
 }
 
 export function PlayScreen(props: PlayProps) {
+  const { isMyTurn, length, onGuess } = props
   const [value, setValue] = useState('')
-  const full = value.length === props.length
+  const full = value.length === length
   const banned = full && isAllSameDigit(value)
   const canSubmit = props.isMyTurn && full && !banned
 
   const slots = Array.from({ length: props.length }, (_, i) => value[i] ?? '')
 
   const submit = useCallback(() => {
-    if (!props.isMyTurn) return
-    if (value.length !== props.length || isAllSameDigit(value)) return
-    props.onGuess(value)
+    if (!isMyTurn) return
+    if (value.length !== length || isAllSameDigit(value)) return
+    onGuess(value)
     setValue('')
-  }, [props.isMyTurn, props.length, props.onGuess, value])
+  }, [isMyTurn, length, onGuess, value])
 
   useDigitKeyboard({
     enabled: Boolean(props.keyboardEnabled && props.isMyTurn),

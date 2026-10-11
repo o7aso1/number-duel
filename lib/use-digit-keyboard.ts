@@ -22,9 +22,11 @@ export function useDigitKeyboard({
   const onChangeRef = useRef(onChange)
   const onSubmitRef = useRef(onSubmit)
 
-  valueRef.current = value
-  onChangeRef.current = onChange
-  onSubmitRef.current = onSubmit
+  useEffect(() => {
+    valueRef.current = value
+    onChangeRef.current = onChange
+    onSubmitRef.current = onSubmit
+  }, [value, onChange, onSubmit])
 
   useEffect(() => {
     if (!enabled) return
