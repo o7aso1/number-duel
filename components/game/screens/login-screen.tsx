@@ -1,6 +1,7 @@
 'use client'
 
 import { Logo } from '@/components/game/ui/logo'
+import { Brain, ShieldCheck, Swords, Trophy } from 'lucide-react'
 
 function GoogleMark() {
   return (
@@ -33,25 +34,23 @@ export function LoginScreen({
   onGuest: () => void
 }) {
   return (
-    <div className="flex flex-1 flex-col px-6 pb-10 pt-16">
-      {/* Brand */}
+    <div className="relative flex flex-1 flex-col overflow-hidden px-5 pb-8 pt-[max(2rem,env(safe-area-inset-top))]">
+      <div className="pointer-events-none absolute left-1/2 top-[12%] size-72 -translate-x-1/2 rounded-full bg-primary/10 blur-[80px]" />
       <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <div className="animate-in fade-in zoom-in-95 duration-500">
-          <Logo className="mb-8 scale-125" />
+        <div className="animate-float-soft relative mb-8 grid size-32 place-items-center rounded-[36px] border border-primary/20 bg-gradient-to-br from-primary/18 to-secondary/10 shadow-[0_30px_70px_-25px_var(--primary)] backdrop-blur-xl">
+          <span className="absolute inset-3 rounded-[27px] border border-white/5" /><Logo className="scale-[1.45]" />
         </div>
-        <h1 className="animate-in fade-in slide-in-from-bottom-3 text-5xl font-black leading-tight tracking-tight text-balance duration-500">
-          مبارزة الأرقام
-        </h1>
-        <p className="mt-4 max-w-xs text-lg text-muted-foreground text-pretty animate-in fade-in slide-in-from-bottom-2 duration-700">
-          تحدّى صاحبك في تخمين الأرقام
-        </p>
+        <p className="eyebrow animate-in fade-in duration-500">THE ULTIMATE NUMBER GAME</p>
+        <h1 className="mt-3 animate-in fade-in slide-in-from-bottom-3 bg-gradient-to-b from-foreground to-foreground/65 bg-clip-text text-5xl font-black leading-tight tracking-tight text-transparent text-balance duration-500">مبارزة الأرقام</h1>
+        <p className="mt-3 max-w-xs text-sm leading-6 text-muted-foreground text-pretty animate-in fade-in slide-in-from-bottom-2 duration-700">فكّر، حلّل، واكشف السر قبل خصمك.</p>
+        <div className="mt-8 grid w-full grid-cols-3 gap-2.5"><Feature icon={Swords} label="منافسات" /><Feature icon={Brain} label="تحديات" /><Feature icon={Trophy} label="إنجازات" /></div>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="glass-panel flex flex-col items-center gap-3 rounded-[26px] p-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
         <button
           onClick={onGoogle}
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-primary px-6 py-4 text-lg font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98]"
+          className="premium-button flex w-full items-center justify-center gap-3 rounded-[17px] px-6 py-4 text-base font-black"
         >
           <span className="grid size-7 place-items-center rounded-full bg-background/90">
             <GoogleMark />
@@ -60,11 +59,14 @@ export function LoginScreen({
         </button>
         <button
           onClick={onGuest}
-          className="rounded-full px-4 py-2 text-base font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          className="w-full rounded-[15px] border border-white/8 bg-white/[.025] px-4 py-3 text-sm font-bold text-muted-foreground transition-colors hover:border-white/15 hover:text-foreground"
         >
           متابعة كضيف
         </button>
+        <span className="flex items-center gap-1.5 text-[9px] text-muted-foreground/60"><ShieldCheck className="size-3" />دخول آمن · تقدمك محفوظ على جهازك</span>
       </div>
     </div>
   )
 }
+
+function Feature({ icon: Icon, label }: { icon: typeof Brain; label: string }) { return <div className="glass-panel flex flex-col items-center gap-2 rounded-[16px] py-3 text-[10px] font-bold text-muted-foreground"><Icon className="size-4 text-secondary" />{label}</div> }

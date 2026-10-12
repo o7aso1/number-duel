@@ -49,14 +49,14 @@ export function Sheet({
         type="button"
         aria-label="إغلاق"
         onClick={onClose}
-        className="absolute inset-0 bg-black/65 backdrop-blur-[2px] animate-in fade-in duration-200"
+        className="absolute inset-0 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         className={cn(
-          'relative z-10 w-full max-w-md border border-border bg-popover text-popover-foreground shadow-2xl',
+          'glass-panel relative z-10 w-full max-w-md text-popover-foreground shadow-[0_30px_100px_rgb(0_0_0/.55)]',
           centered
             ? 'rounded-3xl animate-in zoom-in-95 fade-in duration-200'
             : 'rounded-t-3xl border-x border-t animate-in slide-in-from-bottom-6 duration-300 pb-[max(1rem,env(safe-area-inset-bottom))]',

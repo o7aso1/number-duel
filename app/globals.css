@@ -37,15 +37,15 @@
 [data-theme='classic'] {
   color-scheme: dark;
   --radius: 1rem;
-  --background: oklch(0.2 0.045 285);
+  --background: oklch(0.145 0.045 285);
   --foreground: oklch(0.95 0.02 85);
-  --card: oklch(0.25 0.05 285);
+  --card: oklch(0.205 0.052 285);
   --card-foreground: oklch(0.95 0.02 85);
   --popover: oklch(0.23 0.05 285);
   --popover-foreground: oklch(0.95 0.02 85);
-  --primary: oklch(0.82 0.15 82);
+  --primary: oklch(0.84 0.17 82);
   --primary-foreground: oklch(0.24 0.06 285);
-  --secondary: oklch(0.72 0.1 190);
+  --secondary: oklch(0.76 0.14 190);
   --secondary-foreground: oklch(0.2 0.04 220);
   --muted: oklch(0.3 0.045 285);
   --muted-foreground: oklch(0.74 0.04 80);
@@ -54,13 +54,13 @@
   --destructive: oklch(0.64 0.2 22);
   --destructive-foreground: oklch(0.98 0.01 60);
   --success: oklch(0.78 0.16 150);
-  --border: oklch(0.4 0.06 288);
+  --border: oklch(0.34 0.065 288);
   --input: oklch(0.3 0.05 285);
   --ring: oklch(0.82 0.15 82);
 }
 
-/* ===== Oasis — واحة (الأخضر السابق) ===== */
-[data-theme='oasis'] {
+/* ===== Neon ===== */
+[data-theme='neon'] {
   color-scheme: dark;
   --radius: 1rem;
   --background: oklch(0.19 0.028 158);
@@ -85,8 +85,8 @@
   --ring: oklch(0.87 0.2 128);
 }
 
-/* ===== Day — نهاري ===== */
-[data-theme='day'] {
+/* ===== Paper ===== */
+[data-theme='paper'] {
   color-scheme: light;
   --radius: 1rem;
   --background: oklch(0.97 0.02 150);
@@ -111,6 +111,32 @@
   --ring: oklch(0.62 0.16 150);
 }
 
+/* ===== Space ===== */
+[data-theme='space'] {
+  color-scheme: dark;
+  --radius: 1rem;
+  --background: oklch(0.14 0.055 282);
+  --foreground: oklch(0.96 0.02 255);
+  --card: oklch(0.2 0.065 279);
+  --card-foreground: oklch(0.96 0.02 255);
+  --popover: oklch(0.18 0.06 280);
+  --popover-foreground: oklch(0.96 0.02 255);
+  --primary: oklch(0.72 0.2 303);
+  --primary-foreground: oklch(0.98 0.01 290);
+  --secondary: oklch(0.78 0.13 210);
+  --secondary-foreground: oklch(0.16 0.05 270);
+  --muted: oklch(0.25 0.055 279);
+  --muted-foreground: oklch(0.72 0.055 260);
+  --accent: oklch(0.3 0.095 300);
+  --accent-foreground: oklch(0.98 0.01 290);
+  --destructive: oklch(0.65 0.22 20);
+  --destructive-foreground: white;
+  --success: oklch(0.78 0.17 160);
+  --border: oklch(0.34 0.09 286);
+  --input: oklch(0.23 0.06 280);
+  --ring: oklch(0.72 0.2 303);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -118,5 +144,97 @@
   html,
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at 50% -20%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 42%),
+      linear-gradient(180deg, color-mix(in oklab, var(--background) 92%, black), var(--background));
+    min-height: 100dvh;
   }
+  button { cursor: pointer; }
+}
+
+@layer components {
+  .game-shell {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 88% 2%, color-mix(in oklab, var(--secondary) 13%, transparent), transparent 28%),
+      radial-gradient(circle at 5% 72%, color-mix(in oklab, var(--primary) 9%, transparent), transparent 32%),
+      var(--background);
+    box-shadow: 0 0 80px rgb(0 0 0 / .42);
+  }
+  .game-shell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    opacity: .32;
+    background-image:
+      linear-gradient(color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(to bottom, black, transparent 62%);
+  }
+  .game-shell::after {
+    content: '';
+    position: absolute;
+    width: 260px;
+    height: 260px;
+    left: -150px;
+    top: 24%;
+    z-index: -1;
+    border-radius: 999px;
+    background: var(--primary);
+    filter: blur(120px);
+    opacity: .08;
+    pointer-events: none;
+  }
+  .glass-panel {
+    border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--card) 88%, white 3%), color-mix(in oklab, var(--card) 72%, transparent));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .05), 0 18px 50px rgb(0 0 0 / .18);
+    backdrop-filter: blur(18px);
+  }
+  .premium-button {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, color-mix(in oklab, var(--primary) 92%, white), var(--primary));
+    color: var(--primary-foreground);
+    box-shadow: 0 12px 32px color-mix(in oklab, var(--primary) 25%, transparent), inset 0 1px 0 rgb(255 255 255 / .28), inset 0 -2px 0 rgb(0 0 0 / .14);
+    transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
+  }
+  .premium-button:hover { filter: brightness(1.08); box-shadow: 0 16px 38px color-mix(in oklab, var(--primary) 31%, transparent), inset 0 1px 0 rgb(255 255 255 / .32); }
+  .premium-button:active { transform: scale(.975) translateY(1px); }
+  .premium-button:disabled { filter: saturate(.25); box-shadow: none; }
+  .eyebrow { letter-spacing: .18em; text-transform: uppercase; color: var(--secondary); font-size: .64rem; font-weight: 800; }
+  .game-card-glow { box-shadow: 0 22px 55px -24px color-mix(in oklab, var(--primary) 58%, transparent), inset 0 1px 0 rgb(255 255 255 / .12); }
+}
+
+@keyframes correct-flash {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes correct-burst {
+  0% { opacity: 0; transform: scale(0.35) rotate(-12deg); }
+  38% { opacity: 1; transform: scale(1.18) rotate(4deg); }
+  72% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+.animate-correct-flash { animation: correct-flash 1.1s ease-out both; }
+.animate-correct-burst { animation: correct-burst 1.1s cubic-bezier(.2,.8,.2,1) both; }
+
+@keyframes memory-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes float-soft { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-7px) rotate(1deg); } }
+@keyframes shine { 0% { transform: translateX(-140%) skewX(-18deg); } 55%,100% { transform: translateX(260%) skewX(-18deg); } }
+@keyframes pulse-ring { 0%,100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--secondary) 0%, transparent); } 50% { box-shadow: 0 0 0 10px color-mix(in oklab, var(--secondary) 8%, transparent); } }
+.animate-float-soft { animation: float-soft 4.5s ease-in-out infinite; }
+.animate-shine::after { content:''; position:absolute; inset:-20%; width:35%; background:linear-gradient(90deg,transparent,rgb(255 255 255 / .18),transparent); animation:shine 4.8s ease-in-out infinite; }
+.animate-pulse-ring { animation: pulse-ring 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-correct-flash,
+  .animate-correct-burst { animation-duration: 0.01ms; }
 }

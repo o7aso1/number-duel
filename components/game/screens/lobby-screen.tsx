@@ -40,22 +40,22 @@ export function LobbyScreen({
   }
 
   return (
-    <div className="flex flex-1 flex-col px-6 pb-10 pt-6">
+    <div className="flex flex-1 flex-col px-5 pb-8 pt-[max(1rem,env(safe-area-inset-top))]">
       <header className="flex items-center">
         <button
           onClick={onCancel}
           aria-label="رجوع"
-          className="grid size-10 place-items-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+          className="glass-panel grid size-10 place-items-center rounded-[13px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowRight className="size-5" />
         </button>
         <h1 className="mr-3 text-xl font-bold">الغرفة</h1>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-8 text-center">
+      <div className="glass-panel my-6 flex flex-1 flex-col items-center justify-center gap-8 rounded-[30px] p-6 text-center">
         <div className="flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground">رمز الغرفة</p>
-          <div className="rounded-2xl border border-primary/40 bg-primary/10 px-8 py-4">
+          <div className="rounded-[20px] border border-primary/35 bg-primary/10 px-8 py-4 shadow-[0_0_35px_color-mix(in_oklab,var(--primary)_12%,transparent)]">
             <span className="font-mono text-4xl font-black tracking-[0.35em] tabular text-primary">
               {roomCode}
             </span>
@@ -75,14 +75,14 @@ export function LobbyScreen({
       <div className="flex flex-col gap-3">
         <button
           onClick={shareWhatsApp}
-          className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-success px-6 py-4 text-lg font-bold text-background transition-all active:scale-[0.98]"
+          className="flex w-full items-center justify-center gap-2.5 rounded-[17px] bg-success px-6 py-4 text-base font-black text-background shadow-[0_12px_30px_color-mix(in_oklab,var(--success)_18%,transparent)] transition-all active:scale-[0.98]"
         >
           <WhatsAppMark />
           دعوة عبر واتساب
         </button>
         <button
           onClick={copy}
-          className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-border bg-card px-6 py-4 font-bold text-foreground transition-all active:scale-[0.98]"
+          className="glass-panel flex w-full items-center justify-center gap-2.5 rounded-[17px] px-6 py-4 font-bold text-foreground transition-all active:scale-[0.98]"
         >
           {copied ? (
             <>

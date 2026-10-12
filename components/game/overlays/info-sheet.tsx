@@ -3,11 +3,11 @@
 import { Sheet } from '@/components/game/ui/sheet'
 
 const RULES = [
-  'كل لاعب يختار رقمًا سريًا بعدد الخانات المحدّد (التكرار الكامل مثل 1111 مسموح في سرك).',
+  'اختر من 3 إلى 6 خانات، وحدد هل تكرار الأرقام مسموح أم لا.',
   'بالتناوب، يحاول كل لاعب تخمين رقم خصمه.',
   'النتيجة = عدد الأرقام الصحيحة في مكانها الصحيح فقط.',
-  'ممنوع في التخمين تكرار نفس الرقم في كل الخانات (مثل 1111).',
-  'أول من يخمّن رقم خصمه بالكامل يفوز بالجولة.',
+  'إذا كان التكرار مسموحًا، يبقى التخمين الكامل مثل 1111 ممنوعًا، بينما يمكن أن يكون هو السر.',
+  'لكل نمط وقت ومحاولات وتلميحات مختلفة، والنقاط تكافئ الحل السريع والمحاولات الأقل.',
 ]
 
 export function InfoSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -27,6 +27,10 @@ export function InfoSheet({ open, onClose }: { open: boolean; onClose: () => voi
         مثال: رقمك السري <span className="font-mono font-bold text-secondary">4271</span> —
         وخمّن الخصم <span className="font-mono font-bold text-secondary">4021</span>، تكون النتيجة{' '}
         <span className="font-bold text-foreground">3 صح</span> (الأرقام 4 و 2 و 1 في أماكنها).
+      </div>
+      <div className="mt-3 rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-pretty">
+        <b className="block text-foreground">ذاكرة الأرقام</b>
+        احفظ التسلسل قبل اختفائه ثم اكتبه بالترتيب. يزداد رقم واحد كل جولة، والتحدي اليومي يعرض التسلسل نفسه لجميع اللاعبين حسب تاريخ اليوم.
       </div>
     </Sheet>
   )

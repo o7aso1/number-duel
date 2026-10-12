@@ -50,13 +50,13 @@ function KeyButton({
       disabled={disabled}
       aria-label={ariaLabel}
       className={cn(
-        'inline-flex h-12 w-full items-center justify-center rounded-xl',
-        'font-mono text-xl font-semibold tabular',
-        'border border-border transition-all active:scale-95 active:brightness-110',
+        'inline-flex h-13 w-full items-center justify-center rounded-[15px]',
+        'font-mono text-xl font-black tabular',
+        'border transition-all duration-150 active:scale-[0.94] active:translate-y-0.5',
         'disabled:pointer-events-none disabled:opacity-40',
         variant === 'default'
-          ? 'bg-card text-card-foreground hover:border-primary/60'
-          : 'bg-muted text-muted-foreground hover:text-foreground',
+          ? 'border-white/10 bg-gradient-to-b from-white/[.075] to-white/[.025] text-card-foreground shadow-[inset_0_1px_0_rgb(255_255_255/.08),0_5px_14px_rgb(0_0_0/.16)] hover:border-primary/50 hover:bg-primary/10'
+          : 'border-white/8 bg-white/[.035] text-muted-foreground hover:border-destructive/40 hover:text-destructive',
       )}
     >
       {children}

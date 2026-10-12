@@ -3,19 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   buildCandidates,
+  calculateScore,
   countCorrect,
+  countPossibleSecrets,
   filterCandidates,
   generateSecret,
   isValidGuess,
   isValidSecret,
+  MODE_PRESETS,
   normalizeTheme,
   pickSmartGuess,
   storageGet,
   storageRemove,
   storageSet,
+  totalSecretCount,
   type ChatMessage,
+  type CpuDifficulty,
   type Difficulty,
   type Guess,
+  type GameMode,
+  type HintType,
+  type MatchOutcome,
   type Screen,
   type ThemeName,
   type TimerOption,
@@ -33,13 +41,21 @@ import { ChatSheet } from '@/components/game/overlays/chat-sheet'
 import { ConfirmExitSheet } from '@/components/game/overlays/confirm-exit-sheet'
 import { MatchSetupSheet, type MatchMode } from '@/components/game/overlays/match-setup-sheet'
 import { Tutorial } from '@/components/game/overlays/tutorial'
+import { HintSheet } from '@/components/game/overlays/hint-sheet'
+import { ProbabilitySheet, type ProbabilityStep } from '@/components/game/overlays/probability-sheet'
+import { ProfileSheet } from '@/components/game/overlays/profile-sheet'
+import { ReplaySheet } from '@/components/game/overlays/replay-sheet'
+import { MemoryGame } from '@/components/game/memory-game'
+import { LocalDuel } from '@/components/game/local-duel'
 import { getSupabase } from '@/lib/supabase'
 import { playSfx } from '@/lib/sfx'
+import { DEFAULT_PROFILE, normalizeProfile, recordDuel, recordMemory, type PlayerProfile } from '@/lib/progression'
+import { shareResultImage } from '@/lib/share-result'
 
 type Mode = 'cpu' | 'room'
 
 type CpuSession = {
-  v: 1
+  v: 2
   matchGen: number
   screen: Screen
   length: Difficulty
@@ -49,10 +65,17 @@ type CpuSession = {
   cpuCandidates: string[]
   isMyTurn: boolean
   turnNumber: number
-  hintUsed: boolean
+  hintUses: number
   marked: string[]
   won: boolean
   cpuPickingSecret: boolean
+  gameMode: GameMode
+  allowRepeats: boolean
+  cpuGuessCount: number
+  outcome: MatchOutcome
+  score: number
+  startedAt: number
+  elapsedSeconds: number
 }
 
 type RoomPayload = {
@@ -61,13 +84,19 @@ type RoomPayload = {
   turn: string | null
   winner: string | null
   digitCount: number
-  hintUsed: boolean
+  hintsUsed?: number
   turnNumber: number
   myGuessCount: number
   mySecret: string | null
   opponentSecret: string | null
   opponentPresence?: string
   timerSeconds?: number
+  gameMode?: GameMode
+  allowRepeats?: boolean
+  maxAttempts?: number
+  hintLimit?: number
+  score?: number
+  startedAt?: string | null
   secondsLeft?: number | null
   guesses: { guess: string; correctPositions: number }[]
   players: { id: string; name: string; ready: boolean; isYou: boolean; hasSecret: boolean }[]
@@ -89,22 +118,32 @@ function vibrate(pattern: number | number[] = 25) {
 }
 
 export function GameApp() {
+  const [experience, setExperience] = useState<'duel' | 'memory' | 'daily' | 'local'>('duel')
   const [screen, setScreen] = useState<Screen>('login')
   const [nickname, setNickname] = useState('')
   const [difficulty, setDifficulty] = useState<Difficulty>(4)
   const [theme, setTheme] = useState<ThemeName>('classic')
   const [muted, setMuted] = useState(false)
   const [timer, setTimer] = useState<TimerOption>(0)
+  const [gameMode, setGameMode] = useState<GameMode>('normal')
+  const [allowRepeats, setAllowRepeats] = useState(true)
   const [joinCode, setJoinCode] = useState('')
   const [streak, setStreak] = useState(0)
   const [bestStreak, setBestStreak] = useState(0)
   const [booted, setBooted] = useState(false)
+  const [profile, setProfile] = useState<PlayerProfile>(DEFAULT_PROFILE)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [replayOpen, setReplayOpen] = useState(false)
+  const [cpuDifficulty, setCpuDifficulty] = useState<CpuDifficulty>('medium')
 
   const [infoOpen, setInfoOpen] = useState(false)
   const [trackerOpen, setTrackerOpen] = useState(false)
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [tutorialSeen, setTutorialSeen] = useState(false)
   const [marked, setMarked] = useState<Set<string>>(new Set())
+  const [hintOpen, setHintOpen] = useState(false)
+  const [probabilityOpen, setProbabilityOpen] = useState(false)
+  const [probabilityHistory, setProbabilityHistory] = useState<ProbabilityStep[]>([])
 
   const [mode, setMode] = useState<Mode>('cpu')
   const [roomCode, setRoomCode] = useState('')
@@ -117,11 +156,16 @@ export function GameApp() {
   const [cpuCandidates, setCpuCandidates] = useState<string[]>([])
   const [isMyTurn, setIsMyTurn] = useState(true)
   const [turnNumber, setTurnNumber] = useState(1)
-  const [hintUsed, setHintUsed] = useState(false)
+  const [hintUses, setHintUses] = useState(0)
   const [hint, setHint] = useState<string | null>(null)
   const [presence, setPresence] = useState<PresenceKind>('online')
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
   const [won, setWon] = useState(false)
+  const [outcome, setOutcome] = useState<MatchOutcome>('lose')
+  const [score, setScore] = useState(0)
+  const [startedAt, setStartedAt] = useState(0)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [cpuGuessCount, setCpuGuessCount] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [cpuPickingSecret, setCpuPickingSecret] = useState(false)
@@ -139,6 +183,9 @@ export function GameApp() {
   const sessionBootstrappedRef = useRef(false)
   const matchGenRef = useRef(0)
   const trackerScopeRef = useRef('')
+  const recordedResultRef = useRef<string | null>(null)
+  const maxAttempts = MODE_PRESETS[gameMode].maxAttempts
+  const hintLimit = MODE_PRESETS[gameMode].hintLimit
 
   useEffect(() => {
     chatOpenRef.current = chatOpen
@@ -152,8 +199,12 @@ export function GameApp() {
     setTheme(normalizeTheme(storageGet('nd_theme', 'classic')))
     setMuted(storageGet('nd_muted', false))
     setTimer(storageGet<TimerOption>('nd_timer', 0))
+    setGameMode(storageGet<GameMode>('nd_game_mode', 'normal'))
+    setAllowRepeats(storageGet('nd_allow_repeats', true))
     setStreak(storageGet('nd_streak', 0))
     setBestStreak(storageGet('nd_best_streak', 0))
+    setProfile(normalizeProfile(storageGet<Partial<PlayerProfile>>('nd_profile', DEFAULT_PROFILE)))
+    setCpuDifficulty(storageGet<CpuDifficulty>('nd_cpu_difficulty', 'medium'))
     const seen = storageGet('nd_tutorial_done', false)
     setTutorialSeen(seen)
     const params = new URLSearchParams(window.location.search)
@@ -173,8 +224,12 @@ export function GameApp() {
   useEffect(() => storageSet('nd_digits', difficulty), [difficulty])
   useEffect(() => storageSet('nd_muted', muted), [muted])
   useEffect(() => storageSet('nd_timer', timer), [timer])
+  useEffect(() => storageSet('nd_game_mode', gameMode), [gameMode])
+  useEffect(() => storageSet('nd_allow_repeats', allowRepeats), [allowRepeats])
   useEffect(() => storageSet('nd_streak', streak), [streak])
   useEffect(() => storageSet('nd_best_streak', bestStreak), [bestStreak])
+  useEffect(() => storageSet('nd_profile', profile), [profile])
+  useEffect(() => storageSet('nd_cpu_difficulty', cpuDifficulty), [cpuDifficulty])
 
   const stopRealtime = useCallback(() => {
     if (heartbeatRef.current) {
@@ -187,20 +242,33 @@ export function GameApp() {
     (room: RoomPayload, pid: string, opts?: { silent?: boolean }) => {
       setRoomCode(room.code)
       setLength((room.digitCount as Difficulty) || 4)
+      const roomMode = room.gameMode || 'normal'
+      setGameMode(roomMode)
+      setAllowRepeats(room.allowRepeats ?? true)
       setPlayerSecret(room.mySecret || '')
       setOpponentSecret(room.opponentSecret || '')
-      setGuesses(
-        (room.guesses || []).map((g) => ({
+      const nextGuesses = (room.guesses || []).map((g) => ({
           value: g.guess,
           correct: g.correctPositions,
-        })),
-      )
-      setHintUsed(Boolean(room.hintUsed))
+        }))
+      setGuesses((current) => {
+        const unchanged = current.length === nextGuesses.length && current.every(
+          (guess, index) => guess.value === nextGuesses[index]?.value && guess.correct === nextGuesses[index]?.correct,
+        )
+        return unchanged ? current : nextGuesses
+      })
+      setHintUses(room.hintsUsed || 0)
       setTurnNumber(room.turnNumber || 1)
       setIsMyTurn(room.turn === pid)
       setPresence(mapPresence(room.opponentPresence))
       setTimer((room.timerSeconds as TimerOption) || 0)
       setSecondsLeft(room.secondsLeft ?? null)
+      if (room.startedAt) {
+        const start = new Date(room.startedAt).getTime()
+        setStartedAt(start)
+        setElapsedSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)))
+      }
+      if (typeof room.score === 'number') setScore(room.score)
 
       const guessCount = (room.guesses || []).length
       const freshMatch =
@@ -222,18 +290,23 @@ export function GameApp() {
         setScreen('play')
       } else if (room.status === 'finished') {
         const playerWon = room.winner === pid
+        const matchOutcome: MatchOutcome = room.winner ? (playerWon ? 'win' : 'lose') : 'draw'
         setWon(playerWon)
+        setOutcome(matchOutcome)
         const key = `${room.code}:${room.winner}`
         if (streakKeyRef.current !== key) {
           streakKeyRef.current = key
+          const onlineSeconds = room.startedAt ? Math.max(0, Math.floor((Date.now() - new Date(room.startedAt).getTime()) / 1000)) : 0
+          const onlineScore = typeof room.score === 'number' ? room.score : playerWon ? 100 * room.digitCount : 0
+          setProfile(current => recordDuel(current, { won: playerWon, attempts: room.myGuessCount || 0, seconds: onlineSeconds, score: onlineScore }))
           setStreak((s) => {
-            const next = playerWon ? s + 1 : 0
+            const next = matchOutcome === 'win' ? s + 1 : matchOutcome === 'draw' ? s : 0
             setBestStreak((b) => Math.max(b, next))
             return next
           })
           if (!opts?.silent) {
-            playSfx(muted, playerWon ? 'win' : 'lose')
-            vibrate(playerWon ? [40, 40, 80] : 40)
+            playSfx(muted, matchOutcome === 'win' ? 'win' : 'lose')
+            vibrate(matchOutcome === 'win' ? [40, 40, 80] : 40)
           }
         }
         setScreen('finished')
@@ -329,10 +402,18 @@ export function GameApp() {
     setCpuCandidates([])
     setIsMyTurn(true)
     setTurnNumber(1)
-    setHintUsed(false)
+    setHintUses(0)
     setHint(null)
     setPresence('online')
     setWon(false)
+    setOutcome('lose')
+    setScore(0)
+    setStartedAt(0)
+    setElapsedSeconds(0)
+    setCpuGuessCount(0)
+    setProbabilityHistory([])
+    setHintOpen(false)
+    setProbabilityOpen(false)
     setMarked(new Set())
     setPlayerSecret('')
     setOpponentSecret('')
@@ -342,6 +423,7 @@ export function GameApp() {
     setUnreadChat(0)
     setChatOpen(false)
     streakKeyRef.current = null
+    recordedResultRef.current = null
     storageRemove('nd_cpu_session')
   }, [])
 
@@ -368,6 +450,7 @@ export function GameApp() {
     setPlayerToken(null)
     setRoomCode('')
     setMode('cpu')
+    setExperience('duel')
     setScreen('home')
   }
 
@@ -377,7 +460,8 @@ export function GameApp() {
     setLength(difficulty)
     resetSession()
     setCpuPickingSecret(false)
-    setCpuCandidates(buildCandidates(difficulty))
+    setTimer(MODE_PRESETS[gameMode].timer)
+    setCpuCandidates(buildCandidates(difficulty, allowRepeats))
     setOpponentSecret('')
     setMatchSetupOpen(false)
     setScreen('setup')
@@ -392,7 +476,11 @@ export function GameApp() {
     const { data, error: err } = await getSupabase().rpc('nd_create_room', {
       p_name: name,
       p_digit_count: difficulty,
-      p_timer_seconds: timer,
+      p_timer_seconds: MODE_PRESETS[gameMode].timer,
+      p_game_mode: gameMode,
+      p_allow_repeats: allowRepeats,
+      p_max_attempts: maxAttempts,
+      p_hint_limit: hintLimit,
     })
     setBusy(false)
     if (err || !data?.ok) {
@@ -420,9 +508,16 @@ export function GameApp() {
     playSfx(muted, 'tap')
   }
 
+  const selectGameMode = (nextMode: GameMode) => {
+    setGameMode(nextMode)
+    setTimer(MODE_PRESETS[nextMode].timer)
+  }
+
   const startRandomMatch = async () => {
     setDifficulty(4)
     setTimer(30)
+    setGameMode('quick')
+    setAllowRepeats(true)
     playSfx(muted, 'tap')
     setBusy(true)
     setError('')
@@ -434,6 +529,10 @@ export function GameApp() {
       p_name: name,
       p_digit_count: digits,
       p_timer_seconds: 30,
+      p_game_mode: 'quick',
+      p_allow_repeats: true,
+      p_max_attempts: MODE_PRESETS.quick.maxAttempts,
+      p_hint_limit: MODE_PRESETS.quick.hintLimit,
     })
     setBusy(false)
     if (err || !data?.ok) {
@@ -458,6 +557,7 @@ export function GameApp() {
 
   const confirmMatchSetup = async () => {
     if (matchMode === 'cpu') startCpu()
+    else if (matchMode === 'local') { resetSession(); setLength(difficulty); setMatchSetupOpen(false); setExperience('local') }
     else await createRoom()
   }
 
@@ -492,9 +592,9 @@ export function GameApp() {
   }
 
   const confirmSecret = async (secret: string) => {
-    const digits = length >= 3 && length <= 5 ? length : 4
-    if (!isValidSecret(secret, digits)) {
-      setError(`لازم تدخل ${digits} أرقام`)
+    const digits = length >= 3 && length <= 6 ? length : 4
+    if (!isValidSecret(secret, digits, allowRepeats)) {
+      setError(allowRepeats ? `لازم تدخل ${digits} أرقام` : `لازم تدخل ${digits} أرقام مختلفة`)
       playSfx(muted, 'fail')
       return
     }
@@ -507,7 +607,8 @@ export function GameApp() {
       if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
       const thinkMs = 4000 + Math.floor(Math.random() * 2000)
       cpuPrepRef.current = setTimeout(() => {
-        setOpponentSecret(generateSecret(digits))
+        const cpuSecret = generateSecret(digits, allowRepeats)
+        setOpponentSecret(cpuSecret)
         setGuesses([])
         setMarked(new Set())
         trackerScopeRef.current = `cpu:${matchGenRef.current}`
@@ -515,10 +616,11 @@ export function GameApp() {
         setIsMyTurn(playerStarts)
         setPresence(playerStarts ? 'online' : 'wait')
         setTurnNumber(1)
-        setHintUsed(false)
+        setHintUses(0)
         setHint(null)
         setWon(false)
         setSecondsLeft(timer > 0 && playerStarts ? timer : null)
+        setStartedAt(Date.now())
         setCpuPickingSecret(false)
         setScreen('play')
         playSfx(muted, 'turn')
@@ -553,10 +655,10 @@ export function GameApp() {
   useEffect(() => {
     if (mode !== 'cpu' || !cpuPickingSecret || !playerSecret || screen !== 'setup') return
     if (cpuPrepRef.current) return
-    const digits = length >= 3 && length <= 5 ? length : 4
+    const digits = length >= 3 && length <= 6 ? length : 4
     const thinkMs = 2500 + Math.floor(Math.random() * 1500)
     cpuPrepRef.current = setTimeout(() => {
-      setOpponentSecret(generateSecret(digits as Difficulty))
+      setOpponentSecret(generateSecret(digits as Difficulty, allowRepeats))
       setGuesses([])
       setMarked(new Set())
       trackerScopeRef.current = `cpu:${matchGenRef.current}`
@@ -564,10 +666,11 @@ export function GameApp() {
       setIsMyTurn(playerStarts)
       setPresence(playerStarts ? 'online' : 'wait')
       setTurnNumber(1)
-      setHintUsed(false)
+      setHintUses(0)
       setHint(null)
       setWon(false)
       setSecondsLeft(timer > 0 && playerStarts ? timer : null)
+      setStartedAt(Date.now())
       setCpuPickingSecret(false)
       setScreen('play')
       playSfx(muted, 'turn')
@@ -576,14 +679,33 @@ export function GameApp() {
     return () => {
       /* keep timeout across muted/timer re-renders; cleared on leave via resetSession */
     }
-  }, [mode, cpuPickingSecret, playerSecret, screen, length, timer, muted])
+  }, [mode, cpuPickingSecret, playerSecret, screen, length, timer, muted, allowRepeats])
 
   const finishCpu = useCallback(
-    (playerWon: boolean, oppSecret: string) => {
+    (matchOutcome: MatchOutcome, oppSecret: string) => {
+      const playerWon = matchOutcome === 'win'
+      const finalElapsed = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0
+      const finalAttempts = Math.max(1, guesses.length + (matchOutcome === 'win' ? 1 : 0))
+      const finalScore = playerWon ? calculateScore({
+        length,
+        mode: gameMode,
+        maxAttempts,
+        guessesUsed: finalAttempts,
+        elapsedSeconds: finalElapsed,
+        hintsUsed: hintUses,
+      }) : matchOutcome === 'draw' ? 250 * length : 0
+      setElapsedSeconds(finalElapsed)
       setWon(playerWon)
+      setOutcome(matchOutcome)
       setOpponentSecret(oppSecret)
+      setScore(finalScore)
+      const resultKey = `cpu:${matchGenRef.current}:${startedAt}`
+      if (recordedResultRef.current !== resultKey) {
+        recordedResultRef.current = resultKey
+        setProfile(current => recordDuel(current, { won: playerWon, attempts: finalAttempts, seconds: finalElapsed, score: finalScore }))
+      }
       setStreak((s) => {
-        const next = playerWon ? s + 1 : 0
+        const next = playerWon ? s + 1 : matchOutcome === 'draw' ? s : 0
         setBestStreak((b) => Math.max(b, next))
         return next
       })
@@ -591,24 +713,34 @@ export function GameApp() {
       vibrate(playerWon ? [40, 40, 80] : 40)
       setScreen('finished')
     },
-    [muted],
+    [gameMode, guesses.length, hintUses, length, maxAttempts, muted, startedAt],
   )
 
   const handleGuess = async (value: string) => {
-    if (!isValidGuess(value, length)) return
+    if (!isValidGuess(value, length, allowRepeats) || guesses.length >= maxAttempts) return
     setHint(null)
+    setError('')
 
     if (mode === 'cpu') {
       const correct = countCorrect(value, opponentSecret)
-      setGuesses((g) => [...g, { value, correct }])
+      const nextGuesses = [...guesses, { value, correct }]
+      setGuesses(nextGuesses)
       playSfx(muted, 'guess')
       vibrate(20)
       if (correct === length) {
-        finishCpu(true, opponentSecret)
+        finishCpu('win', opponentSecret)
         return
       }
-      setIsMyTurn(false)
-      setPresence('wait')
+      if (nextGuesses.length >= maxAttempts && cpuGuessCount >= maxAttempts) {
+        finishCpu('draw', opponentSecret)
+      } else if (cpuGuessCount >= maxAttempts) {
+        setIsMyTurn(true)
+        setPresence('online')
+        setTurnNumber((number) => number + 1)
+      } else {
+        setIsMyTurn(false)
+        setPresence('wait')
+      }
       return
     }
 
@@ -634,23 +766,44 @@ export function GameApp() {
   useEffect(() => {
     if (screen !== 'play' || mode !== 'cpu' || isMyTurn || won) return
     if (!playerSecret || !opponentSecret) return
+    if (cpuGuessCount >= maxAttempts) {
+      if (guesses.length >= maxAttempts) finishCpu('draw', opponentSecret)
+      else { setIsMyTurn(true); setPresence('online') }
+      return
+    }
     setPresence('wait')
     const thinkMs = 4500 + Math.floor(Math.random() * 2000)
     const t = setTimeout(() => {
-      let pool = cpuCandidates.length ? cpuCandidates : buildCandidates(length)
-      const guess = pickSmartGuess(pool)
+      let pool = cpuCandidates.length ? cpuCandidates : buildCandidates(length, allowRepeats)
+      if (!pool.includes(playerSecret)) pool = [...pool, playerSecret]
+      let guess: string
+      if (cpuDifficulty === 'easy') {
+        do { guess = generateSecret(length, allowRepeats) } while (!isValidGuess(guess, length, allowRepeats))
+      } else if (cpuDifficulty === 'medium') {
+        guess = pool[Math.floor(Math.random() * pool.length)] || pickSmartGuess(pool, length, allowRepeats)
+      } else {
+        guess = pickSmartGuess(pool, length, allowRepeats)
+      }
       const correct = countCorrect(guess, playerSecret)
       pool = filterCandidates(pool, guess, correct)
       setCpuCandidates(pool)
+      const nextCpuCount = cpuGuessCount + 1
+      setCpuGuessCount(nextCpuCount)
       playSfx(muted, 'guess')
       if (correct === length) {
-        finishCpu(false, opponentSecret)
+        finishCpu('lose', opponentSecret)
         return
       }
-      setIsMyTurn(true)
-      setPresence('online')
+      if (nextCpuCount >= maxAttempts && guesses.length >= maxAttempts) {
+        finishCpu('draw', opponentSecret)
+        return
+      }
+      const playerCanGuess = guesses.length < maxAttempts
+      setIsMyTurn(playerCanGuess)
+      setPresence(playerCanGuess ? 'online' : 'wait')
+      if (playerCanGuess) setError('')
       setTurnNumber((n) => n + 1)
-      setSecondsLeft(timer > 0 ? timer : null)
+      setSecondsLeft(timer > 0 && playerCanGuess ? timer : null)
       vibrate(25)
       playSfx(muted, 'turn')
     }, thinkMs)
@@ -661,12 +814,17 @@ export function GameApp() {
     isMyTurn,
     won,
     cpuCandidates,
+    cpuGuessCount,
+    maxAttempts,
+    guesses.length,
+    allowRepeats,
     length,
     playerSecret,
     opponentSecret,
     timer,
     muted,
     finishCpu,
+    cpuDifficulty,
   ])
 
   // Timer
@@ -689,21 +847,61 @@ export function GameApp() {
     return () => clearTimeout(t)
   }, [screen, isMyTurn, timer, secondsLeft, won, mode, roomCode, playerId, applyOnlineRoom, muted])
 
-  const useHint = async () => {
-    if (hintUsed) return
+  useEffect(() => {
+    if (screen !== 'play' || !startedAt) return
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [screen, startedAt])
+
+  useEffect(() => {
+    const timerId = setTimeout(() => {
+      const initial = totalSecretCount(length, allowRepeats)
+      if (!guesses.length) {
+        setProbabilityHistory([])
+        return
+      }
+      const history: ProbabilityStep[] = []
+      let before = initial
+      for (let index = 0; index < guesses.length; index++) {
+        const after = countPossibleSecrets(length, allowRepeats, guesses.slice(0, index + 1))
+        history.push({ before, after })
+        before = after
+      }
+      setProbabilityHistory(history)
+    }, 0)
+    return () => clearTimeout(timerId)
+  }, [allowRepeats, guesses, length])
+
+  const useHint = async (type: HintType) => {
+    setHintOpen(false)
+    if (hintUses >= hintLimit) return
     if (mode === 'cpu') {
       const last = guesses[guesses.length - 1]
-      if (!last || last.correct < 1) {
+      if (type === 'position' && (!last || last.correct < 1)) {
         setHint('خمّن مرة فيها خانة صحيحة ثم استخدم التلميح')
         return
       }
-      const positions: number[] = []
-      for (let i = 0; i < last.value.length; i++) {
-        if (last.value[i] === opponentSecret[i]) positions.push(i + 1)
+      if (type === 'position' && last) {
+        const positions: number[] = []
+        for (let i = 0; i < last.value.length; i++) {
+          if (last.value[i] === opponentSecret[i]) positions.push(i + 1)
+        }
+        const pick = positions[Math.floor(Math.random() * positions.length)]
+        setHint(`الخانة رقم ${pick} من آخر تخمينك صحيحة (بدون كشف الرقم)`)
+      } else if (type === 'parity') {
+        const index = Math.floor(Math.random() * length)
+        const digit = Number(opponentSecret[index])
+        setHint(`رقم الخانة ${index + 1} ${digit % 2 === 0 ? 'زوجي' : 'فردي'}`)
+      } else {
+        const index = Math.floor(Math.random() * length)
+        const secretDigit = opponentSecret[index]
+        const excluded = String((Number(secretDigit) + 1 + Math.floor(Math.random() * 9)) % 10)
+        setHint(`استبعد الرقم ${excluded} من الخانة ${index + 1}`)
+        setMarked((previous) => new Set(previous).add(`${excluded}-${index}`))
       }
-      const pick = positions[Math.floor(Math.random() * positions.length)]
-      setHint(`الخانة رقم ${pick} من آخر تخمينك صحيحة (بدون كشف الرقم)`)
-      setHintUsed(true)
+      setHintUses((used) => used + 1)
       playSfx(muted, 'hint')
       return
     }
@@ -712,13 +910,14 @@ export function GameApp() {
       p_code: roomCode,
       p_player_id: playerId,
       p_player_token: playerToken,
+      p_hint_type: type,
     })
     if (err || !data?.ok) {
       setHint(err?.message || data?.error || 'فشل التلميح')
       return
     }
     setHint(data.message || '')
-    setHintUsed(true)
+    setHintUses((used) => used + 1)
     if (data.room) applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
     playSfx(muted, 'hint')
   }
@@ -735,7 +934,7 @@ export function GameApp() {
   const rematch = async () => {
     if (mode === 'cpu') {
       resetSession()
-      setCpuCandidates(buildCandidates(length))
+      setCpuCandidates(buildCandidates(length, allowRepeats))
       setOpponentSecret('')
       setScreen('setup')
       return
@@ -828,7 +1027,7 @@ export function GameApp() {
     if (!['setup', 'play', 'finished'].includes(screen)) return
     if (!playerSecret && screen !== 'setup') return
     const session: CpuSession = {
-      v: 1,
+      v: 2,
       matchGen: matchGenRef.current,
       screen,
       length,
@@ -838,10 +1037,17 @@ export function GameApp() {
       cpuCandidates,
       isMyTurn,
       turnNumber,
-      hintUsed,
+      hintUses,
       marked: [...marked],
       won,
       cpuPickingSecret,
+      gameMode,
+      allowRepeats,
+      cpuGuessCount,
+      outcome,
+      score,
+      startedAt,
+      elapsedSeconds,
     }
     storageSet('nd_cpu_session', session)
   }, [
@@ -855,10 +1061,17 @@ export function GameApp() {
     cpuCandidates,
     isMyTurn,
     turnNumber,
-    hintUsed,
+    hintUses,
     marked,
     won,
     cpuPickingSecret,
+    gameMode,
+    allowRepeats,
+    cpuGuessCount,
+    outcome,
+    score,
+    startedAt,
+    elapsedSeconds,
   ])
 
   // Restore online or CPU session — once on boot only (avoid overwriting tracker mid-match)
@@ -898,7 +1111,7 @@ export function GameApp() {
     }
 
     const cpu = storageGet<CpuSession | null>('nd_cpu_session', null)
-    if (!cpu || cpu.v !== 1) return
+    if (!cpu || cpu.v !== 2) return
     if (!['setup', 'play', 'finished'].includes(cpu.screen)) return
     setMode('cpu')
     matchGenRef.current = cpu.matchGen ?? 0
@@ -907,13 +1120,21 @@ export function GameApp() {
     setPlayerSecret(cpu.playerSecret || '')
     setOpponentSecret(cpu.opponentSecret || '')
     setGuesses(cpu.guesses || [])
-    setCpuCandidates(cpu.cpuCandidates?.length ? cpu.cpuCandidates : buildCandidates(cpu.length))
+    setCpuCandidates(cpu.cpuCandidates?.length ? cpu.cpuCandidates : buildCandidates(cpu.length, cpu.allowRepeats))
     setIsMyTurn(cpu.isMyTurn)
     setTurnNumber(cpu.turnNumber || 1)
-    setHintUsed(Boolean(cpu.hintUsed))
+    setHintUses(cpu.hintUses || 0)
     setMarked(new Set(cpu.marked || []))
     setWon(Boolean(cpu.won))
     setCpuPickingSecret(Boolean(cpu.cpuPickingSecret))
+    setGameMode(cpu.gameMode || 'normal')
+    setTimer(MODE_PRESETS[cpu.gameMode || 'normal'].timer)
+    setAllowRepeats(cpu.allowRepeats ?? true)
+    setCpuGuessCount(cpu.cpuGuessCount || 0)
+    setOutcome(cpu.outcome || 'lose')
+    setScore(cpu.score || 0)
+    setStartedAt(cpu.startedAt || Date.now())
+    setElapsedSeconds(cpu.elapsedSeconds || 0)
     setPresence(cpu.isMyTurn ? 'online' : 'wait')
     setScreen(cpu.screen)
     storageSet('nd_logged', true)
@@ -939,11 +1160,36 @@ export function GameApp() {
   }, [mode, roomCode, playerId, playerToken, subscribeRoom, screen, isMyTurn])
 
   if (!booted) {
-    return <main className="mx-auto flex min-h-dvh w-full max-w-md items-center justify-center bg-background" />
+    return <main className="game-shell mx-auto flex min-h-dvh w-full max-w-md items-center justify-center" />
+  }
+
+  const displayScore = score || calculateScore({
+    length,
+    mode: gameMode,
+    maxAttempts,
+    guessesUsed: Math.max(1, guesses.length),
+    elapsedSeconds,
+    hintsUsed: hintUses,
+  })
+
+  const finishMemory = (result: { bestLength: number; score: number; xp: number; daily: boolean; wonDaily: boolean }) => {
+    setProfile(current => recordMemory(current, result.bestLength, result.xp, result.daily && result.wonDaily))
+  }
+
+  const finishLocal = (result: { won: boolean; attempts: number; seconds: number; score: number }) => {
+    setProfile(current => recordDuel(current, result))
+  }
+
+  if (experience === 'memory' || experience === 'daily') {
+    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden"><MemoryGame daily={experience === 'daily'} muted={muted} onExit={() => setExperience('duel')} onComplete={finishMemory} /></main>
+  }
+
+  if (experience === 'local') {
+    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden"><LocalDuel key={`${length}-${gameMode}-${allowRepeats}`} length={length} gameMode={gameMode} allowRepeats={allowRepeats} muted={muted} onExit={() => setExperience('duel')} onComplete={finishLocal} /></main>
   }
 
   return (
-    <main className="mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden bg-background">
+    <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col">
         {screen === 'login' && (
           <LoginScreen onGoogle={enterGoogle} onGuest={enterAsGuest} />
@@ -952,16 +1198,16 @@ export function GameApp() {
         {screen === 'home' && (
           <HomeScreen
             nickname={nickname}
-            onNickname={setNickname}
-            theme={theme}
-            onTheme={setTheme}
+            profile={profile}
             muted={muted}
             onMuted={setMuted}
-            streak={streak}
-            bestStreak={bestStreak}
+            onProfile={() => setProfileOpen(true)}
             onCreateRoom={() => openMatchSetup('create')}
             onRandomMatch={startRandomMatch}
             onPlayComputer={() => openMatchSetup('cpu')}
+            onPlayLocal={() => openMatchSetup('local')}
+            onMemory={() => setExperience('memory')}
+            onDaily={() => setExperience('daily')}
             onJoin={joinRoom}
             joinCode={joinCode}
             onJoinCode={setJoinCode}
@@ -980,6 +1226,7 @@ export function GameApp() {
         {screen === 'setup' && (
           <SetupScreen
             length={length}
+            allowRepeats={allowRepeats}
             onConfirm={confirmSecret}
             onBack={exitMatch}
             waitingOpponent={cpuPickingSecret}
@@ -991,21 +1238,26 @@ export function GameApp() {
         {screen === 'play' && (
           <PlayScreen
             length={length}
+            allowRepeats={allowRepeats}
+            gameMode={gameMode}
+            maxAttempts={maxAttempts}
+            score={displayScore}
             isMyTurn={isMyTurn}
             turnNumber={turnNumber}
             guesses={guesses}
             timer={timer}
             secondsLeft={secondsLeft}
-            hintUsed={hintUsed}
+            hintsRemaining={Math.max(0, hintLimit - hintUses)}
             hint={hint || error || null}
             presence={presence}
             mySecret={playerSecret}
             showChat={mode === 'room'}
             unreadChat={unreadChat}
-            keyboardEnabled={!trackerOpen && !chatOpen && !exitOpen && !matchSetupOpen}
+            keyboardEnabled={!trackerOpen && !chatOpen && !exitOpen && !matchSetupOpen && !hintOpen && !probabilityOpen}
             onGuess={handleGuess}
-            onHint={useHint}
+            onHint={() => setHintOpen(true)}
             onOpenTracker={() => setTrackerOpen(true)}
+            onOpenProbabilities={() => setProbabilityOpen(true)}
             onOpenChat={() => setChatOpen(true)}
             onExit={exitMatch}
           />
@@ -1013,12 +1265,16 @@ export function GameApp() {
 
         {screen === 'finished' && (
           <FinishedScreen
-            won={won}
+            outcome={outcome}
             opponentSecret={opponentSecret}
-            turns={turnNumber}
+            attempts={guesses.length}
             streak={streak}
+            score={score}
+            elapsedSeconds={elapsedSeconds}
             onRematch={rematch}
             onHome={goHome}
+            onReplay={() => setReplayOpen(true)}
+            onShare={() => void shareResultImage({ title: outcome === 'win' ? 'فوز!' : outcome === 'draw' ? 'تعادل' : 'محاولة قوية', score, attempts: guesses.length, outcome })}
           />
         )}
       </div>
@@ -1034,6 +1290,19 @@ export function GameApp() {
         length={length}
         crossed={marked}
         onToggle={toggleMark}
+        onClear={() => setMarked(new Set())}
+      />
+      <HintSheet
+        open={hintOpen}
+        onClose={() => setHintOpen(false)}
+        remaining={Math.max(0, hintLimit - hintUses)}
+        onChoose={useHint}
+      />
+      <ProbabilitySheet
+        open={probabilityOpen}
+        onClose={() => setProbabilityOpen(false)}
+        guesses={guesses}
+        history={probabilityHistory.length ? probabilityHistory : [{ before: totalSecretCount(length, allowRepeats), after: totalSecretCount(length, allowRepeats) }]}
       />
       <ChatSheet
         open={chatOpen}
@@ -1045,14 +1314,20 @@ export function GameApp() {
       <MatchSetupSheet
         open={matchSetupOpen}
         onClose={() => setMatchSetupOpen(false)}
-        mode={matchMode}
+        matchMode={matchMode}
         difficulty={difficulty}
         onDifficulty={setDifficulty}
-        timer={timer}
-        onTimer={setTimer}
+        gameMode={gameMode}
+        onGameMode={selectGameMode}
+        allowRepeats={allowRepeats}
+        onAllowRepeats={setAllowRepeats}
+        cpuDifficulty={cpuDifficulty}
+        onCpuDifficulty={setCpuDifficulty}
         busy={busy}
         onConfirm={confirmMatchSetup}
       />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} name={nickname} onName={setNickname} profile={profile} onAvatar={avatar => setProfile(current => ({ ...current, avatar }))} theme={theme} onTheme={setTheme} />
+      <ReplaySheet open={replayOpen} onClose={() => setReplayOpen(false)} guesses={guesses} length={length} />
       <ConfirmExitSheet
         open={exitOpen}
         onClose={() => setExitOpen(false)}
