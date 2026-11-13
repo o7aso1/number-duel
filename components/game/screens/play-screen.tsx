@@ -22,15 +22,17 @@ type PlayProps = {
   secondsLeft: number | null
   hintsRemaining: number
   hint: string | null
+  error?: string | null
   presence: PresenceKind
+  opponentIsCpu?: boolean
   mySecret?: string
   showChat?: boolean
   unreadChat?: number
   keyboardEnabled?: boolean
-  onGuess: (value: string) => void
-  onHint: () => void
-  onOpenTracker: () => void
-  onOpenProbabilities: () => void
+  onGuess: (value: string) => boolean | Promise<boolean>
+  onHint?: () => void
+  onOpenTracker?: () => void
+  onOpenProbabilities?: () => void
   onOpenChat?: () => void
   onExit: () => void
 }
@@ -38,13 +40,16 @@ type PlayProps = {
 export function PlayScreen(props: PlayProps) {
   const { isMyTurn, length, onGuess } = props
   const [value, setValue] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const submittingRef = useRef(false)
   const [impact, setImpact] = useState<{ correct: number; id: number } | null>(null)
   const touchRef = useRef<{ x: number; y: number } | null>(null)
   const full = value.length === length
   const bannedAllSame = full && isAllSameDigit(value)
   const repeated = full && !props.allowRepeats && !hasUniqueDigits(value)
   const attemptsLeft = Math.max(0, props.maxAttempts - props.guesses.length)
-  const canSubmit = props.isMyTurn && full && !bannedAllSame && !repeated && attemptsLeft > 0
+  const canSubmit = props.isMyTurn && !submitting && full && !bannedAllSame && !repeated && attemptsLeft > 0
   const lastGuess = props.guesses.at(-1)
 
   useEffect(() => {
@@ -56,16 +61,25 @@ export function PlayScreen(props: PlayProps) {
 
   const slots = Array.from({ length: props.length }, (_, i) => value[i] ?? '')
 
-  const submit = useCallback(() => {
-    if (!isMyTurn || attemptsLeft < 1) return
+  const submit = useCallback(async () => {
+    if (!isMyTurn || attemptsLeft < 1 || submittingRef.current) return
     if (value.length !== length || isAllSameDigit(value)) return
     if (!props.allowRepeats && !hasUniqueDigits(value)) return
-    onGuess(value)
-    setValue('')
+    submittingRef.current = true
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      if (await onGuess(value)) setValue('')
+    } catch {
+      setSubmitError('تعذّر إرسال التخمين. تحقق من الاتصال وحاول مجددًا.')
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }, [attemptsLeft, isMyTurn, length, onGuess, props.allowRepeats, value])
 
   useDigitKeyboard({
-    enabled: Boolean(props.keyboardEnabled && props.isMyTurn),
+    enabled: Boolean(props.keyboardEnabled && props.isMyTurn && !submitting),
     maxLength: props.length,
     value,
     onChange: setValue,
@@ -78,7 +92,7 @@ export function PlayScreen(props: PlayProps) {
       ? 'الأرقام يجب أن تختلف'
       : attemptsLeft < 1
         ? 'انتهت محاولاتك'
-        : props.isMyTurn ? 'خمّن' : 'انتظر دورك'
+        : submitting ? 'جارٍ إرسال التخمين…' : props.isMyTurn ? 'تأكيد التخمين' : 'انتظر دورك'
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5 pt-[max(.75rem,env(safe-area-inset-top))] sm:px-7 lg:px-10 lg:pb-10 lg:pt-7" onTouchStart={event => { const touch = event.touches[0]; touchRef.current = { x: touch.clientX, y: touch.clientY } }} onTouchEnd={event => { const start = touchRef.current; if (!start) return; const touch = event.changedTouches[0]; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (dy < -60 && Math.abs(dy) > Math.abs(dx)) submit(); else if (Math.abs(dx) > 60) setValue(current => current.slice(0, -1)); touchRef.current = null }}>
@@ -102,13 +116,13 @@ export function PlayScreen(props: PlayProps) {
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)] lg:items-start lg:gap-8">
-        <div className="flex min-w-0 flex-col gap-4 lg:col-start-2 lg:row-start-1">
+        <div className="order-2 flex min-w-0 flex-col gap-4 lg:order-none lg:col-start-2 lg:row-start-1">
         <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.015))] p-4 shadow-2xl lg:p-6">
           <div className="absolute left-1/2 top-1/2 size-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-3xl" />
           <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-            <Fighter icon={UserRound} label="أنت" detail={`${props.score.toLocaleString('ar-SA')} نقطة`} active={props.isMyTurn} />
+            <Fighter icon={UserRound} label="أنت" detail={`حتى ${props.score.toLocaleString('ar-SA')} نقطة`} active={props.isMyTurn} />
             <div className="flex flex-col items-center"><span className="grid size-11 place-items-center rounded-full border border-primary/25 bg-primary/10 font-mono text-xs font-black text-primary">VS</span><small className="mt-2 text-[9px] text-muted-foreground">جولة {props.turnNumber}</small></div>
-            <Fighter icon={Bot} label="الخصم" detail={props.isMyTurn ? 'يراقب' : 'يفكر الآن'} active={!props.isMyTurn} />
+            <Fighter icon={props.opponentIsCpu ? Bot : UserRound} label={props.opponentIsCpu ? 'الكمبيوتر' : 'الخصم'} detail={props.isMyTurn ? 'يراقب' : 'يفكر الآن'} active={!props.isMyTurn} />
           </div>
           <div className="relative mt-4 grid grid-cols-3 gap-2 border-t border-white/8 pt-3">
             <BattleStat label="المتبقي" value={`${attemptsLeft}`} />
@@ -133,7 +147,7 @@ export function PlayScreen(props: PlayProps) {
 
         <section className="rounded-[22px] border border-white/8 bg-white/[.025] p-3">
           <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-black text-muted-foreground">سجل المواجهة</p><span className="font-mono text-[9px] text-muted-foreground">{props.guesses.length}/{props.maxAttempts}</span></div>
-          <div className="flex max-h-28 flex-col gap-1.5 overflow-y-auto">
+          <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto lg:max-h-72">
             {props.guesses.length === 0 ? <p className="rounded-[14px] border border-dashed border-white/10 px-3 py-3 text-center text-[10px] text-muted-foreground">أدخل أول تخمين لبدء تحليل الشفرة</p> : [...props.guesses].reverse().map((guess, reverseIndex) => {
               const index = props.guesses.length - reverseIndex
               const won = guess.correct === props.length
@@ -145,15 +159,19 @@ export function PlayScreen(props: PlayProps) {
           </div>
         </section>
 
-        <div className="grid grid-cols-3 gap-2">
-          <ActionButton onClick={props.onHint} disabled={props.hintsRemaining < 1 || !props.isMyTurn} icon={Lightbulb} label={`تلميح (${props.hintsRemaining})`} />
-          <ActionButton onClick={props.onOpenTracker} icon={Grid3x3} label="ملاحظاتي" tone="secondary" />
-          <ActionButton onClick={props.onOpenProbabilities} icon={BarChart3} label="الاحتمالات" tone="secondary" />
-        </div>
+        {(props.onHint || props.onOpenTracker || props.onOpenProbabilities) && <div className="grid grid-cols-3 gap-2">
+          {props.onHint && <ActionButton onClick={props.onHint} disabled={props.hintsRemaining < 1 || !props.isMyTurn} icon={Lightbulb} label={`تلميح (${props.hintsRemaining})`} />}
+          {props.onOpenTracker && <ActionButton onClick={props.onOpenTracker} icon={Grid3x3} label="ملاحظاتي" tone="secondary" />}
+          {props.onOpenProbabilities && <ActionButton onClick={props.onOpenProbabilities} icon={BarChart3} label="الاحتمالات" tone="secondary" />}
+        </div>}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1 lg:rounded-[30px] lg:border lg:border-white/10 lg:bg-white/[.025] lg:p-7">
+        <div className="order-1 flex min-w-0 flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:rounded-[30px] lg:border lg:border-white/10 lg:bg-white/[.025] lg:p-7">
         <div className="hidden lg:block"><h1 className="text-2xl font-black">اكتشف رقم الخصم</h1><p className="mt-1 text-sm text-muted-foreground">كوّن تخمينك ثم اقرأ نتيجة كل محاولة.</p></div>
+        <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/8 px-4 py-3 lg:hidden">
+          <div><b className="block text-sm">{props.isMyTurn ? 'دورك: حل الشفرة' : 'دور الخصم'}</b><span className="text-[10px] text-muted-foreground">باقي {attemptsLeft} من {props.maxAttempts} · {props.length} خانات{lastGuess ? ` · آخر تخمين: ${lastGuess.correct} في مكانه` : ''}</span></div>
+          {props.isMyTurn && props.timer > 0 && props.secondsLeft !== null ? <TurnTimerRing total={props.timer} left={props.secondsLeft} /> : <Swords className="size-5 text-primary" />}
+        </div>
         <div className="flex justify-center gap-2 py-1 lg:py-4" dir="ltr">
           {slots.map((d, i) => <div key={i} className={cn(
             'relative grid place-items-center rounded-[16px] border font-mono text-2xl font-black tabular transition-all after:absolute after:inset-x-2 after:bottom-1.5 after:h-0.5 after:rounded-full',
@@ -162,10 +180,15 @@ export function PlayScreen(props: PlayProps) {
           )}>{d}</div>)}
         </div>
 
-        {props.hint && <p className="rounded-xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>}
+        {props.hint && <p role="status" className="rounded-xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>}
+        {(submitError || props.error) && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{submitError || props.error}</p>}
+
+        <p aria-live="polite" className="min-h-5 text-center text-xs text-muted-foreground">
+          {bannedAllSame ? 'التخمين المكوّن من رقم واحد مكرر بالكامل ممنوع.' : repeated ? 'اختر أرقامًا مختلفة حسب قوانين هذه المباراة.' : props.isMyTurn ? `المحاولة ${Math.min(props.guesses.length + 1, props.maxAttempts)} من ${props.maxAttempts} · أدخل ${props.length} أرقام` : 'سيعود إدخال الرقم عند وصول دورك.'}
+        </p>
 
         <div className={cn('rounded-[26px] border border-white/10 bg-black/20 p-3 shadow-[0_22px_60px_-38px_rgb(0_0_0)]', !props.isMyTurn && 'pointer-events-none opacity-50')}>
-          <Keypad onDigit={(digit) => setValue((current) => current.length < props.length ? current + digit : current)} onDelete={() => setValue((current) => current.slice(0, -1))} disabled={!props.isMyTurn || attemptsLeft < 1} />
+          <Keypad onDigit={(digit) => { setSubmitError(''); setValue((current) => current.length < props.length ? current + digit : current) }} onDelete={() => { setSubmitError(''); setValue((current) => current.slice(0, -1)) }} disabled={!props.isMyTurn || attemptsLeft < 1 || submitting} />
           <button type="button" onClick={submit} disabled={!canSubmit} className="premium-button mt-3 flex w-full items-center justify-center gap-2.5 rounded-[17px] px-6 py-3.5 text-base font-black disabled:opacity-35"><Send className="size-5" /> {submitLabel}</button>
         </div>
         <p className="text-center text-[10px] text-muted-foreground lg:hidden">على الجوال: اسحب للأعلى للتخمين أو جانبًا للحذف</p>

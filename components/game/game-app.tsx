@@ -717,7 +717,7 @@ export function GameApp() {
   )
 
   const handleGuess = async (value: string) => {
-    if (!isValidGuess(value, length, allowRepeats) || guesses.length >= maxAttempts) return
+    if (!isValidGuess(value, length, allowRepeats) || guesses.length >= maxAttempts) return false
     setHint(null)
     setError('')
 
@@ -729,7 +729,7 @@ export function GameApp() {
       vibrate(20)
       if (correct === length) {
         finishCpu('win', opponentSecret)
-        return
+        return true
       }
       if (nextGuesses.length >= maxAttempts && cpuGuessCount >= maxAttempts) {
         finishCpu('draw', opponentSecret)
@@ -741,25 +741,35 @@ export function GameApp() {
         setIsMyTurn(false)
         setPresence('wait')
       }
-      return
+      return true
     }
 
-    if (!roomCode || !playerId || !playerToken) return
-    setBusy(true)
-    const { data, error: err } = await getSupabase().rpc('nd_guess', {
-      p_code: roomCode,
-      p_player_id: playerId,
-      p_player_token: playerToken,
-      p_guess: value,
-    })
-    setBusy(false)
-    if (err || !data?.ok) {
-      setError(err?.message || data?.error || 'فشل التخمين')
-      return
+    if (!roomCode || !playerId || !playerToken) {
+      setError('الغرفة غير متاحة الآن. ارجع إليها وحاول مجددًا.')
+      return false
     }
-    playSfx(muted, 'guess')
-    vibrate(20)
-    applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
+    setBusy(true)
+    try {
+      const { data, error: err } = await getSupabase().rpc('nd_guess', {
+        p_code: roomCode,
+        p_player_id: playerId,
+        p_player_token: playerToken,
+        p_guess: value,
+      })
+      if (err || !data?.ok) {
+        setError(err?.message || data?.error || 'لم يصل التخمين. حاول مرة أخرى.')
+        return false
+      }
+      playSfx(muted, 'guess')
+      vibrate(20)
+      applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
+      return true
+    } catch {
+      setError('تعذّر الاتصال بالغرفة. تحقق من الشبكة ثم أعد الإرسال.')
+      return false
+    } finally {
+      setBusy(false)
+    }
   }
 
   // A brief pause makes the turn change readable without feeling stalled.
@@ -1248,8 +1258,10 @@ export function GameApp() {
             timer={timer}
             secondsLeft={secondsLeft}
             hintsRemaining={Math.max(0, hintLimit - hintUses)}
-            hint={hint || error || null}
+            hint={hint}
+            error={error}
             presence={presence}
+            opponentIsCpu={mode === 'cpu'}
             mySecret={playerSecret}
             showChat={mode === 'room'}
             unreadChat={unreadChat}
