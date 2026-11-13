@@ -2,6 +2,6 @@
 :HL["/number-duel/_next/static/media/350b852752f8489d-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/number-duel/_next/static/media/bb3ef058b751a6ad-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/number-duel/_next/static/css/79b4501d6ebc89a3.css","style"]
-:HL["/number-duel/_next/static/css/7f583c57cfd424d1.css","style"]
+:HL["/number-duel/_next/static/css/d7d4bc49296e1fec.css","style"]
 1:[["children",{"s":"__PAGE__","h":160}]]
-0:{"b":"PeocDPhsKZxODAzLSrUrS","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"IUPWfXsKzhpSw6qnyFSyh","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

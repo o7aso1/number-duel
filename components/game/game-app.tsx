@@ -1255,6 +1255,8 @@ export function GameApp() {
             isMyTurn={isMyTurn}
             turnNumber={turnNumber}
             guesses={guesses}
+            probabilityHistory={probabilityHistory}
+            marked={marked}
             timer={timer}
             secondsLeft={secondsLeft}
             hintsRemaining={Math.max(0, hintLimit - hintUses)}

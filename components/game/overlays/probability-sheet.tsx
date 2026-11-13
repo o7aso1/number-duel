@@ -1,6 +1,6 @@
 'use client'
 
-import { ChartNoAxesColumnDecreasing, ChevronLeft } from 'lucide-react'
+import { ChartNoAxesColumnDecreasing } from 'lucide-react'
 import { Sheet } from '@/components/game/ui/sheet'
 import type { Guess } from '@/lib/game'
 
@@ -37,9 +37,9 @@ export function ProbabilitySheet({ open, onClose, guesses, history }: {
           return (
             <div key={`${guess.value}-${index}`} className="flex items-center gap-2 rounded-xl border border-border bg-card p-3" dir="ltr">
               <span className="font-mono font-bold tracking-widest">{guess.value}</span>
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">{guess.correct} صح</span>
+              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">{guess.correct} في مكانه</span>
               <span className="mr-auto flex items-center gap-1 font-mono text-xs tabular text-muted-foreground">
-                {format.format(step?.before ?? 0)} <ChevronLeft className="size-3" /> <b className="text-foreground">{format.format(step?.after ?? 0)}</b>
+                من {format.format(step?.before ?? 0)} إلى <b className="text-foreground">{format.format(step?.after ?? 0)}</b>
               </span>
             </div>
           )

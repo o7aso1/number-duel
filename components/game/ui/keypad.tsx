@@ -52,7 +52,7 @@ function KeyButton({
       className={cn(
         'inline-flex h-13 w-full items-center justify-center rounded-[15px]',
         'font-mono text-xl font-black tabular',
-        'border transition-all duration-150 active:scale-[0.94] active:translate-y-0.5',
+        'border transition-all duration-150 active:scale-[0.94] active:translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
         'disabled:pointer-events-none disabled:opacity-40',
         variant === 'default'
           ? 'border-white/10 bg-gradient-to-b from-white/[.075] to-white/[.025] text-card-foreground shadow-[inset_0_1px_0_rgb(255_255_255/.08),0_5px_14px_rgb(0_0_0/.16)] hover:border-primary/50 hover:bg-primary/10'

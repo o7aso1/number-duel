@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { BarChart3, Bot, ChevronLeft, Grid3x3, Lightbulb, MessageCircle, Send, ShieldCheck, Sparkles, Swords, UserRound } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+import { BarChart3, Bot, ChevronLeft, Grid3x3, Lightbulb, MessageCircle, Send, ShieldCheck, Swords, UserRound } from 'lucide-react'
 import { Keypad } from '@/components/game/ui/keypad'
 import { TurnTimerRing } from '@/components/game/ui/turn-timer-ring'
 import { PresenceBanner, type PresenceKind } from '@/components/game/ui/presence-banner'
@@ -18,6 +18,8 @@ type PlayProps = {
   isMyTurn: boolean
   turnNumber: number
   guesses: Guess[]
+  probabilityHistory?: { before: number; after: number }[]
+  marked?: Set<string>
   timer: number
   secondsLeft: number | null
   hintsRemaining: number
@@ -43,7 +45,6 @@ export function PlayScreen(props: PlayProps) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const submittingRef = useRef(false)
-  const [impact, setImpact] = useState<{ correct: number; id: number } | null>(null)
   const touchRef = useRef<{ x: number; y: number } | null>(null)
   const full = value.length === length
   const bannedAllSame = full && isAllSameDigit(value)
@@ -52,14 +53,10 @@ export function PlayScreen(props: PlayProps) {
   const canSubmit = props.isMyTurn && !submitting && full && !bannedAllSame && !repeated && attemptsLeft > 0
   const lastGuess = props.guesses.at(-1)
 
-  useEffect(() => {
-    if (!lastGuess) return
-    setImpact({ correct: lastGuess.correct, id: Date.now() })
-    const timeout = setTimeout(() => setImpact(null), 1150)
-    return () => clearTimeout(timeout)
-  }, [lastGuess])
-
   const slots = Array.from({ length: props.length }, (_, i) => value[i] ?? '')
+  const fullyExcluded = Array.from({ length: 10 }, (_, digit) => digit).filter(digit =>
+    Array.from({ length: props.length }, (_, slot) => props.marked?.has(`${digit}-${slot}`)).every(Boolean),
+  )
 
   const submit = useCallback(async () => {
     if (!isMyTurn || attemptsLeft < 1 || submittingRef.current) return
@@ -96,38 +93,26 @@ export function PlayScreen(props: PlayProps) {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5 pt-[max(.75rem,env(safe-area-inset-top))] sm:px-7 lg:px-10 lg:pb-10 lg:pt-7" onTouchStart={event => { const touch = event.touches[0]; touchRef.current = { x: touch.clientX, y: touch.clientY } }} onTouchEnd={event => { const start = touchRef.current; if (!start) return; const touch = event.changedTouches[0]; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (dy < -60 && Math.abs(dy) > Math.abs(dx)) submit(); else if (Math.abs(dx) > 60) setValue(current => current.slice(0, -1)); touchRef.current = null }}>
-      {impact && impact.correct > 0 ? (
-        <div key={impact.id} className="pointer-events-none fixed inset-0 z-50 grid place-items-center overflow-hidden">
-          <div className="absolute inset-0 animate-correct-flash bg-success/20" />
-          <div className="relative flex flex-col items-center animate-correct-burst">
-            <Sparkles className="size-16 text-success drop-shadow-[0_0_24px_currentColor]" />
-            <span className="mt-2 rounded-full border border-success/50 bg-background/90 px-5 py-2 text-xl font-black text-success shadow-2xl">
-              {impact.correct} في مكانه!
-            </span>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 lg:gap-7">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
         <header className="flex items-center justify-between">
-          <button type="button" aria-label="العودة" onClick={props.onExit} className="grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-muted-foreground active:scale-95"><ChevronLeft className="size-5 rotate-180" /></button>
-          <div className="text-center"><span className="block text-[9px] font-black tracking-[.2em] text-secondary">NUMBER DUEL</span><b className="mt-0.5 block text-sm">{MODE_PRESETS[props.gameMode].label}</b></div>
-          {props.showChat ? <button type="button" aria-label="المحادثة" onClick={props.onOpenChat} className="relative grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04]"><MessageCircle className="size-[18px] text-secondary" />{(props.unreadChat || 0) > 0 && <span className="absolute -left-1 -top-1 grid min-w-5 place-items-center rounded-full bg-destructive px-1 text-[9px] font-black text-white">{props.unreadChat}</span>}</button> : <span className="size-10" />}
+          <button type="button" aria-label="العودة" onClick={props.onExit} className="grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-muted-foreground active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><ChevronLeft className="size-5 rotate-180" /></button>
+          <h1 className="text-center text-base font-black">مبارزة الأرقام <span className="font-normal text-muted-foreground">/ {MODE_PRESETS[props.gameMode].label}</span></h1>
+          {props.showChat ? <button type="button" aria-label="المحادثة" onClick={props.onOpenChat} className="relative grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><MessageCircle className="size-[18px] text-secondary" />{(props.unreadChat || 0) > 0 && <span className="absolute -left-1 -top-1 grid min-w-5 place-items-center rounded-full bg-destructive px-1 text-[9px] font-black text-white">{props.unreadChat}</span>}</button> : <span className="size-10" />}
         </header>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)] lg:items-start lg:gap-8">
-        <div className="order-2 flex min-w-0 flex-col gap-4 lg:order-none lg:col-start-2 lg:row-start-1">
-        <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.015))] p-4 shadow-2xl lg:p-6">
-          <div className="absolute left-1/2 top-1/2 size-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-3xl" />
-          <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-            <Fighter icon={UserRound} label="أنت" detail={`حتى ${props.score.toLocaleString('ar-SA')} نقطة`} active={props.isMyTurn} />
-            <div className="flex flex-col items-center"><span className="grid size-11 place-items-center rounded-full border border-primary/25 bg-primary/10 font-mono text-xs font-black text-primary">VS</span><small className="mt-2 text-[9px] text-muted-foreground">جولة {props.turnNumber}</small></div>
-            <Fighter icon={props.opponentIsCpu ? Bot : UserRound} label={props.opponentIsCpu ? 'الكمبيوتر' : 'الخصم'} detail={props.isMyTurn ? 'يراقب' : 'يفكر الآن'} active={!props.isMyTurn} />
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-start md:gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)] xl:gap-7">
+        <div className="order-2 flex min-w-0 flex-col gap-3 md:col-start-2 md:row-start-1">
+        <section aria-label="حالة المواجهة" className="rounded-2xl border border-white/10 bg-white/[.035] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+            <span className={cn('flex items-center gap-1.5 font-bold', props.isMyTurn ? 'text-primary' : 'text-foreground')}><UserRound className="size-4" />أنت</span>
+            <span className="text-muted-foreground">ضد</span>
+            <span className={cn('flex items-center gap-1.5 font-bold', !props.isMyTurn ? 'text-primary' : 'text-foreground')}>{props.opponentIsCpu ? <Bot className="size-4" /> : <UserRound className="size-4" />}{props.opponentIsCpu ? 'الكمبيوتر' : 'الخصم'}</span>
+            <span className="ms-auto text-muted-foreground">جولة {props.turnNumber}</span>
           </div>
-          <div className="relative mt-4 grid grid-cols-3 gap-2 border-t border-white/8 pt-3">
-            <BattleStat label="المتبقي" value={`${attemptsLeft}`} />
-            <BattleStat label="الخانات" value={`${props.length}`} />
-            <BattleStat label="التلميحات" value={`${props.hintsRemaining}`} />
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 border-t border-white/8 pt-2 text-[11px] text-muted-foreground">
+            <span>باقي <b className="text-foreground">{attemptsLeft}/{props.maxAttempts}</b> محاولة</span>
+            <span><b className="text-foreground">{props.length}</b> خانات</span>
+            <span>حتى <b className="text-foreground">{props.score.toLocaleString('ar-SA')}</b> نقطة</span>
           </div>
         </section>
 
@@ -138,25 +123,20 @@ export function PlayScreen(props: PlayProps) {
           </div>
         ) : null}
 
-        <div className={cn('flex items-center justify-between rounded-[22px] border px-4 py-3 transition-all', props.isMyTurn ? 'border-primary/25 bg-primary/8' : 'border-white/8 bg-white/[.025]')}>
-          <div className="flex items-center gap-3"><span className={cn('grid size-10 place-items-center rounded-2xl', props.isMyTurn ? 'bg-primary text-primary-foreground' : 'bg-white/[.05] text-muted-foreground')}><Swords className="size-[18px]" /></span><div><span className="block text-sm font-black">{props.isMyTurn ? 'حل الشفرة الآن' : 'الخصم يحاول الحل'}</span><span className="text-[10px] text-muted-foreground">استخدم كل نتيجة لتضييق الاحتمالات</span></div></div>
-          {props.isMyTurn && props.timer > 0 && props.secondsLeft !== null && <TurnTimerRing total={props.timer} left={props.secondsLeft} />}
-        </div>
-
         {props.presence !== 'online' && <PresenceBanner kind={props.presence} />}
 
-        <section className="rounded-[22px] border border-white/8 bg-white/[.025] p-3">
-          <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-black text-muted-foreground">سجل المواجهة</p><span className="font-mono text-[9px] text-muted-foreground">{props.guesses.length}/{props.maxAttempts}</span></div>
-          <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto lg:max-h-72">
-            {props.guesses.length === 0 ? <p className="rounded-[14px] border border-dashed border-white/10 px-3 py-3 text-center text-[10px] text-muted-foreground">أدخل أول تخمين لبدء تحليل الشفرة</p> : [...props.guesses].reverse().map((guess, reverseIndex) => {
+        <section aria-label="سجل التخمينات" className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
+          <div className="mb-3 flex items-center justify-between gap-2"><div><h2 className="text-base font-black">سجل التخمينات</h2><p className="text-[11px] text-muted-foreground">النتيجة تحسب الأرقام الصحيحة في مكانها</p></div><span className="font-mono text-xs text-muted-foreground">{props.guesses.length}/{props.maxAttempts}</span></div>
+          <ol className="flex max-h-72 flex-col gap-2 overflow-y-auto md:max-h-[min(52vh,480px)]">
+            {props.guesses.length === 0 ? <li className="rounded-xl border border-dashed border-white/15 px-3 py-5 text-center text-xs text-muted-foreground">سيظهر أول تخمين ونتيجته هنا.</li> : [...props.guesses].reverse().map((guess, reverseIndex) => {
               const index = props.guesses.length - reverseIndex
-              const won = guess.correct === props.length
-              return <div key={`${guess.value}-${index}`} className={cn('flex items-center justify-between rounded-xl border bg-black/10 px-3 py-1.5 animate-in fade-in', reverseIndex === 0 && guess.correct > 0 ? 'border-success/50' : 'border-white/8')}>
-                <div className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">#{index}</span><span className="font-mono text-lg font-bold tracking-widest" dir="ltr">{guess.value}</span></div>
-                <span className={cn('rounded-full px-2.5 py-0.5 font-mono text-sm font-bold', won ? 'bg-success/20 text-success' : guess.correct > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground')}>{guess.correct} صح</span>
-              </div>
+              const step = props.probabilityHistory?.[index - 1]
+              return <li key={`${guess.value}-${index}`} className={cn('rounded-xl border px-3 py-2.5', reverseIndex === 0 ? 'match-history-reveal border-primary/40 bg-primary/[.07]' : 'border-white/8 bg-black/10')}>
+                <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">#{index}</span><span className="font-mono text-lg font-bold tracking-widest" dir="ltr">{guess.value}</span></div><span className={cn('text-xs font-bold', guess.correct ? 'text-primary' : 'text-muted-foreground')}>{guess.correct} من {props.length} في مكانه</span></div>
+                {step && <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-white/8 pt-1.5 text-[11px] text-muted-foreground"><span>الاحتمالات المتبقية</span><span className="font-mono text-foreground">من {step.before.toLocaleString('ar-SA')} إلى {step.after.toLocaleString('ar-SA')}</span></div>}
+              </li>
             })}
-          </div>
+          </ol>
         </section>
 
         {(props.onHint || props.onOpenTracker || props.onOpenProbabilities) && <div className="grid grid-cols-3 gap-2">
@@ -164,22 +144,21 @@ export function PlayScreen(props: PlayProps) {
           {props.onOpenTracker && <ActionButton onClick={props.onOpenTracker} icon={Grid3x3} label="ملاحظاتي" tone="secondary" />}
           {props.onOpenProbabilities && <ActionButton onClick={props.onOpenProbabilities} icon={BarChart3} label="الاحتمالات" tone="secondary" />}
         </div>}
+        {props.onOpenTracker && <button type="button" onClick={props.onOpenTracker} className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.025] px-3 text-right text-xs text-muted-foreground hover:border-secondary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><span>ملاحظاتي · {props.marked?.size ? `${props.marked.size} مواضع مستبعدة` : 'لم تستبعد أرقامًا بعد'}</span><span className="flex flex-wrap justify-end gap-1" dir="ltr">{fullyExcluded.length ? fullyExcluded.map(digit => <span key={digit} className="grid size-6 place-items-center rounded-md bg-destructive/10 font-mono text-destructive line-through">{digit}</span>) : <span className="text-secondary">فتح</span>}</span></button>}
         </div>
 
-        <div className="order-1 flex min-w-0 flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:rounded-[30px] lg:border lg:border-white/10 lg:bg-white/[.025] lg:p-7">
-        <div className="hidden lg:block"><h1 className="text-2xl font-black">اكتشف رقم الخصم</h1><p className="mt-1 text-sm text-muted-foreground">كوّن تخمينك ثم اقرأ نتيجة كل محاولة.</p></div>
-        <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/8 px-4 py-3 lg:hidden">
-          <div><b className="block text-sm">{props.isMyTurn ? 'دورك: حل الشفرة' : 'دور الخصم'}</b><span className="text-[10px] text-muted-foreground">باقي {attemptsLeft} من {props.maxAttempts} · {props.length} خانات{lastGuess ? ` · آخر تخمين: ${lastGuess.correct} في مكانه` : ''}</span></div>
-          {props.isMyTurn && props.timer > 0 && props.secondsLeft !== null ? <TurnTimerRing total={props.timer} left={props.secondsLeft} /> : <Swords className="size-5 text-primary" />}
-        </div>
-        <div className="flex justify-center gap-2 py-1 lg:py-4" dir="ltr">
+        <section aria-label="إدخال التخمين" className="order-1 flex min-w-0 flex-col gap-3 rounded-2xl border border-white/10 bg-white/[.025] p-4 md:col-start-1 md:row-start-1 md:p-5 xl:p-6">
+        <div className="flex min-h-12 items-center justify-between gap-3"><div className="flex items-center gap-2.5"><span className={cn('grid size-9 place-items-center rounded-xl', props.isMyTurn ? 'bg-primary/15 text-primary' : 'bg-white/8 text-muted-foreground')}><Swords className="size-[18px]" /></span><div><h2 className="text-base font-black">{props.isMyTurn ? 'حل شفرة الخصم' : 'دور الخصم'}</h2><p className="text-[11px] text-muted-foreground">{props.isMyTurn ? `المحاولة ${Math.min(props.guesses.length + 1, props.maxAttempts)} من ${props.maxAttempts}` : 'سيعود الإدخال عند وصول دورك'}</p></div></div>{props.isMyTurn && props.timer > 0 && props.secondsLeft !== null && <TurnTimerRing total={props.timer} left={props.secondsLeft} size={48} />}</div>
+        <div className="mx-auto flex w-full max-w-[460px] justify-center gap-2 py-2" dir="ltr" aria-label="التخمين الحالي">
           {slots.map((d, i) => <div key={i} className={cn(
-            'relative grid place-items-center rounded-[16px] border font-mono text-2xl font-black tabular transition-all after:absolute after:inset-x-2 after:bottom-1.5 after:h-0.5 after:rounded-full',
-            props.length >= 6 ? 'size-11 lg:size-14' : 'size-14 lg:size-16',
+            'relative grid min-w-0 flex-1 place-items-center rounded-xl border font-mono text-2xl font-black tabular transition-colors after:absolute after:inset-x-2 after:bottom-1.5 after:h-0.5 after:rounded-full',
+            props.length >= 6 ? 'h-13 max-w-14' : 'h-14 max-w-16 md:h-13 xl:h-16',
             d ? 'border-primary/45 bg-primary/12 text-primary shadow-[0_12px_30px_-18px_var(--primary)] after:bg-primary' : 'border-white/10 bg-black/20 text-muted-foreground after:bg-white/10',
           )}>{d}</div>)}
         </div>
 
+        {lastGuess && <p key={`${props.guesses.length}-${lastGuess.value}`} role="status" className="match-result-reveal mx-auto w-full max-w-[460px] rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-center text-xs font-bold text-primary">آخر تخمين {lastGuess.value}: {lastGuess.correct} من {props.length} في مكانه</p>}
+        {!!props.marked?.size && props.onOpenTracker && <button type="button" onClick={props.onOpenTracker} className="mx-auto w-full max-w-[460px] rounded-lg px-2 py-1 text-center text-[11px] text-secondary underline underline-offset-4 md:hidden">ملاحظاتك: {props.marked.size} مواضع مستبعدة{fullyExcluded.length ? ` · أرقام مستبعدة كليًا: ${fullyExcluded.join('، ')}` : ''}</button>}
         {props.hint && <p role="status" className="rounded-xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>}
         {(submitError || props.error) && <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">{submitError || props.error}</p>}
 
@@ -187,22 +166,18 @@ export function PlayScreen(props: PlayProps) {
           {bannedAllSame ? 'التخمين المكوّن من رقم واحد مكرر بالكامل ممنوع.' : repeated ? 'اختر أرقامًا مختلفة حسب قوانين هذه المباراة.' : props.isMyTurn ? `المحاولة ${Math.min(props.guesses.length + 1, props.maxAttempts)} من ${props.maxAttempts} · أدخل ${props.length} أرقام` : 'سيعود إدخال الرقم عند وصول دورك.'}
         </p>
 
-        <div className={cn('rounded-[26px] border border-white/10 bg-black/20 p-3 shadow-[0_22px_60px_-38px_rgb(0_0_0)]', !props.isMyTurn && 'pointer-events-none opacity-50')}>
+        <div className={cn('mx-auto w-full max-w-[460px] rounded-2xl border border-white/10 bg-black/20 p-3', !props.isMyTurn && 'opacity-50')}>
           <Keypad onDigit={(digit) => { setSubmitError(''); setValue((current) => current.length < props.length ? current + digit : current) }} onDelete={() => { setSubmitError(''); setValue((current) => current.slice(0, -1)) }} disabled={!props.isMyTurn || attemptsLeft < 1 || submitting} />
-          <button type="button" onClick={submit} disabled={!canSubmit} className="premium-button mt-3 flex w-full items-center justify-center gap-2.5 rounded-[17px] px-6 py-3.5 text-base font-black disabled:opacity-35"><Send className="size-5" /> {submitLabel}</button>
+          <button type="button" onClick={submit} disabled={!canSubmit} className="premium-button mt-3 flex w-full items-center justify-center gap-2.5 rounded-[17px] px-6 py-3.5 text-base font-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-35"><Send className="size-5" /> {submitLabel}</button>
         </div>
-        <p className="text-center text-[10px] text-muted-foreground lg:hidden">على الجوال: اسحب للأعلى للتخمين أو جانبًا للحذف</p>
-        </div>
+        <p className="text-center text-[10px] text-muted-foreground md:hidden">على الجوال: اسحب للأعلى للتخمين أو جانبًا للحذف</p>
+        </section>
         </div>
       </div>
     </div>
   )
 }
 
-function Fighter({ icon: Icon, label, detail, active }: { icon: typeof UserRound; label: string; detail: string; active: boolean }) { return <div className={cn('flex flex-col items-center rounded-[20px] border px-2 py-3 text-center transition-all', active ? 'border-primary/25 bg-primary/8' : 'border-white/5 bg-black/10')}><span className={cn('grid size-10 place-items-center rounded-2xl', active ? 'bg-primary text-primary-foreground' : 'bg-white/[.06] text-muted-foreground')}><Icon className="size-5" /></span><b className="mt-2 text-xs">{label}</b><small className="mt-0.5 whitespace-nowrap text-[8px] text-muted-foreground">{detail}</small></div> }
-
-function BattleStat({ label, value }: { label: string; value: string }) { return <div className="text-center"><b className="block font-mono text-base text-foreground">{value}</b><small className="text-[8px] text-muted-foreground">{label}</small></div> }
-
 function ActionButton({ onClick, disabled, icon: Icon, label, tone = 'primary' }: { onClick: () => void; disabled?: boolean; icon: typeof Lightbulb; label: string; tone?: 'primary' | 'secondary' }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className="glass-panel flex flex-col items-center justify-center gap-1.5 rounded-[14px] py-2.5 text-[10px] font-bold transition-transform active:scale-95 disabled:opacity-35"><Icon className={cn('size-4', tone === 'primary' ? 'text-primary' : 'text-secondary')} />{label}</button>
+  return <button type="button" onClick={onClick} disabled={disabled} className="glass-panel flex flex-col items-center justify-center gap-1.5 rounded-[14px] py-2.5 text-[10px] font-bold transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-35"><Icon className={cn('size-4', tone === 'primary' ? 'text-primary' : 'text-secondary')} />{label}</button>
 }
