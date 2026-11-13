@@ -34,20 +34,20 @@ export function LoginScreen({
   onGuest: () => void
 }) {
   return (
-    <div className="relative flex flex-1 flex-col overflow-hidden px-5 pb-8 pt-[max(2rem,env(safe-area-inset-top))]">
+    <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-8 pt-[max(2rem,env(safe-area-inset-top))] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)] lg:items-center lg:gap-16 lg:px-16 lg:py-12">
       <div className="pointer-events-none absolute left-1/2 top-[12%] size-72 -translate-x-1/2 rounded-full bg-primary/10 blur-[80px]" />
-      <div className="flex flex-1 flex-col items-center justify-center text-center">
+      <div className="flex flex-1 flex-col items-center justify-center text-center lg:items-start lg:text-right">
         <div className="animate-float-soft relative mb-8 grid size-32 place-items-center rounded-[36px] border border-primary/20 bg-gradient-to-br from-primary/18 to-secondary/10 shadow-[0_30px_70px_-25px_var(--primary)] backdrop-blur-xl">
           <span className="absolute inset-3 rounded-[27px] border border-white/5" /><Logo className="scale-[1.45]" />
         </div>
         <p className="eyebrow animate-in fade-in duration-500">THE ULTIMATE NUMBER GAME</p>
-        <h1 className="mt-3 animate-in fade-in slide-in-from-bottom-3 bg-gradient-to-b from-foreground to-foreground/65 bg-clip-text text-5xl font-black leading-tight tracking-tight text-transparent text-balance duration-500">مبارزة الأرقام</h1>
-        <p className="mt-3 max-w-xs text-sm leading-6 text-muted-foreground text-pretty animate-in fade-in slide-in-from-bottom-2 duration-700">فكّر، حلّل، واكشف السر قبل خصمك.</p>
-        <div className="mt-8 grid w-full grid-cols-3 gap-2.5"><Feature icon={Swords} label="منافسات" /><Feature icon={Brain} label="تحديات" /><Feature icon={Trophy} label="إنجازات" /></div>
+        <h1 className="mt-3 animate-in fade-in slide-in-from-bottom-3 bg-gradient-to-b from-foreground to-foreground/65 bg-clip-text text-5xl font-black leading-tight tracking-tight text-transparent text-balance duration-500 lg:text-6xl">مبارزة الأرقام</h1>
+        <p className="mt-3 max-w-xs text-sm leading-6 text-muted-foreground text-pretty animate-in fade-in slide-in-from-bottom-2 duration-700 lg:max-w-lg lg:text-lg lg:leading-9">فكّر، حلّل، واكشف السر قبل خصمك.</p>
+        <div className="mt-8 grid w-full grid-cols-3 gap-2.5 lg:max-w-lg"><Feature icon={Swords} label="منافسات" /><Feature icon={Brain} label="تحديات" /><Feature icon={Trophy} label="إنجازات" /></div>
       </div>
 
       {/* Actions */}
-      <div className="glass-panel flex flex-col items-center gap-3 rounded-[26px] p-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="glass-panel flex flex-col items-center gap-3 rounded-[26px] p-4 animate-in fade-in slide-in-from-bottom-4 duration-700 lg:p-7">
         <button
           onClick={onGoogle}
           className="premium-button flex w-full items-center justify-center gap-3 rounded-[17px] px-6 py-4 text-base font-black"

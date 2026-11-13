@@ -81,7 +81,7 @@ export function PlayScreen(props: PlayProps) {
         : props.isMyTurn ? 'خمّن' : 'انتظر دورك'
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5 pt-[max(.75rem,env(safe-area-inset-top))]" onTouchStart={event => { const touch = event.touches[0]; touchRef.current = { x: touch.clientX, y: touch.clientY } }} onTouchEnd={event => { const start = touchRef.current; if (!start) return; const touch = event.changedTouches[0]; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (dy < -60 && Math.abs(dy) > Math.abs(dx)) submit(); else if (Math.abs(dx) > 60) setValue(current => current.slice(0, -1)); touchRef.current = null }}>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-5 pt-[max(.75rem,env(safe-area-inset-top))] sm:px-7 lg:px-10 lg:pb-10 lg:pt-7" onTouchStart={event => { const touch = event.touches[0]; touchRef.current = { x: touch.clientX, y: touch.clientY } }} onTouchEnd={event => { const start = touchRef.current; if (!start) return; const touch = event.changedTouches[0]; const dx = touch.clientX - start.x; const dy = touch.clientY - start.y; if (dy < -60 && Math.abs(dy) > Math.abs(dx)) submit(); else if (Math.abs(dx) > 60) setValue(current => current.slice(0, -1)); touchRef.current = null }}>
       {impact && impact.correct > 0 ? (
         <div key={impact.id} className="pointer-events-none fixed inset-0 z-50 grid place-items-center overflow-hidden">
           <div className="absolute inset-0 animate-correct-flash bg-success/20" />
@@ -94,14 +94,16 @@ export function PlayScreen(props: PlayProps) {
         </div>
       ) : null}
 
-      <div className="mx-auto flex w-full max-w-md flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 lg:gap-7">
         <header className="flex items-center justify-between">
           <button type="button" aria-label="العودة" onClick={props.onExit} className="grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04] text-muted-foreground active:scale-95"><ChevronLeft className="size-5 rotate-180" /></button>
           <div className="text-center"><span className="block text-[9px] font-black tracking-[.2em] text-secondary">NUMBER DUEL</span><b className="mt-0.5 block text-sm">{MODE_PRESETS[props.gameMode].label}</b></div>
           {props.showChat ? <button type="button" aria-label="المحادثة" onClick={props.onOpenChat} className="relative grid size-10 place-items-center rounded-2xl border border-white/10 bg-white/[.04]"><MessageCircle className="size-[18px] text-secondary" />{(props.unreadChat || 0) > 0 && <span className="absolute -left-1 -top-1 grid min-w-5 place-items-center rounded-full bg-destructive px-1 text-[9px] font-black text-white">{props.unreadChat}</span>}</button> : <span className="size-10" />}
         </header>
 
-        <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.015))] p-4 shadow-2xl">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,.85fr)] lg:items-start lg:gap-8">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-start-2 lg:row-start-1">
+        <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.015))] p-4 shadow-2xl lg:p-6">
           <div className="absolute left-1/2 top-1/2 size-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/8 blur-3xl" />
           <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <Fighter icon={UserRound} label="أنت" detail={`${props.score.toLocaleString('ar-SA')} نقطة`} active={props.isMyTurn} />
@@ -129,16 +131,6 @@ export function PlayScreen(props: PlayProps) {
 
         {props.presence !== 'online' && <PresenceBanner kind={props.presence} />}
 
-        <div className="flex justify-center gap-2 py-1" dir="ltr">
-          {slots.map((d, i) => <div key={i} className={cn(
-            'relative grid place-items-center rounded-[16px] border font-mono text-2xl font-black tabular transition-all after:absolute after:inset-x-2 after:bottom-1.5 after:h-0.5 after:rounded-full',
-            props.length >= 6 ? 'size-11' : 'size-14',
-            d ? 'border-primary/45 bg-primary/12 text-primary shadow-[0_12px_30px_-18px_var(--primary)] after:bg-primary' : 'border-white/10 bg-black/20 text-muted-foreground after:bg-white/10',
-          )}>{d}</div>)}
-        </div>
-
-        {props.hint && <p className="rounded-xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>}
-
         <section className="rounded-[22px] border border-white/8 bg-white/[.025] p-3">
           <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-black text-muted-foreground">سجل المواجهة</p><span className="font-mono text-[9px] text-muted-foreground">{props.guesses.length}/{props.maxAttempts}</span></div>
           <div className="flex max-h-28 flex-col gap-1.5 overflow-y-auto">
@@ -158,12 +150,27 @@ export function PlayScreen(props: PlayProps) {
           <ActionButton onClick={props.onOpenTracker} icon={Grid3x3} label="ملاحظاتي" tone="secondary" />
           <ActionButton onClick={props.onOpenProbabilities} icon={BarChart3} label="الاحتمالات" tone="secondary" />
         </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1 lg:rounded-[30px] lg:border lg:border-white/10 lg:bg-white/[.025] lg:p-7">
+        <div className="hidden lg:block"><h1 className="text-2xl font-black">اكتشف رقم الخصم</h1><p className="mt-1 text-sm text-muted-foreground">كوّن تخمينك ثم اقرأ نتيجة كل محاولة.</p></div>
+        <div className="flex justify-center gap-2 py-1 lg:py-4" dir="ltr">
+          {slots.map((d, i) => <div key={i} className={cn(
+            'relative grid place-items-center rounded-[16px] border font-mono text-2xl font-black tabular transition-all after:absolute after:inset-x-2 after:bottom-1.5 after:h-0.5 after:rounded-full',
+            props.length >= 6 ? 'size-11 lg:size-14' : 'size-14 lg:size-16',
+            d ? 'border-primary/45 bg-primary/12 text-primary shadow-[0_12px_30px_-18px_var(--primary)] after:bg-primary' : 'border-white/10 bg-black/20 text-muted-foreground after:bg-white/10',
+          )}>{d}</div>)}
+        </div>
+
+        {props.hint && <p className="rounded-xl border border-secondary/25 bg-secondary/10 px-3 py-2 text-center text-sm text-secondary animate-in fade-in">{props.hint}</p>}
 
         <div className={cn('rounded-[26px] border border-white/10 bg-black/20 p-3 shadow-[0_22px_60px_-38px_rgb(0_0_0)]', !props.isMyTurn && 'pointer-events-none opacity-50')}>
           <Keypad onDigit={(digit) => setValue((current) => current.length < props.length ? current + digit : current)} onDelete={() => setValue((current) => current.slice(0, -1))} disabled={!props.isMyTurn || attemptsLeft < 1} />
           <button type="button" onClick={submit} disabled={!canSubmit} className="premium-button mt-3 flex w-full items-center justify-center gap-2.5 rounded-[17px] px-6 py-3.5 text-base font-black disabled:opacity-35"><Send className="size-5" /> {submitLabel}</button>
         </div>
-        <p className="text-center text-[10px] text-muted-foreground">على الجوال: اسحب للأعلى للتخمين أو جانبًا للحذف</p>
+        <p className="text-center text-[10px] text-muted-foreground lg:hidden">على الجوال: اسحب للأعلى للتخمين أو جانبًا للحذف</p>
+        </div>
+        </div>
       </div>
     </div>
   )

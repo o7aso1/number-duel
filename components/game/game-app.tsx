@@ -1160,7 +1160,7 @@ export function GameApp() {
   }, [mode, roomCode, playerId, playerToken, subscribeRoom, screen, isMyTurn])
 
   if (!booted) {
-    return <main className="game-shell mx-auto flex min-h-dvh w-full max-w-md items-center justify-center" />
+    return <main className="game-shell mx-auto flex min-h-dvh w-full max-w-7xl items-center justify-center" />
   }
 
   const displayScore = score || calculateScore({
@@ -1181,15 +1181,15 @@ export function GameApp() {
   }
 
   if (experience === 'memory' || experience === 'daily') {
-    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden"><MemoryGame daily={experience === 'daily'} muted={muted} onExit={() => setExperience('duel')} onComplete={finishMemory} /></main>
+    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-7xl flex-col overflow-hidden"><MemoryGame daily={experience === 'daily'} muted={muted} onExit={() => setExperience('duel')} onComplete={finishMemory} /></main>
   }
 
   if (experience === 'local') {
-    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden"><LocalDuel key={`${length}-${gameMode}-${allowRepeats}`} length={length} gameMode={gameMode} allowRepeats={allowRepeats} muted={muted} onExit={() => setExperience('duel')} onComplete={finishLocal} /></main>
+    return <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-7xl flex-col overflow-hidden"><LocalDuel key={`${length}-${gameMode}-${allowRepeats}`} length={length} gameMode={gameMode} allowRepeats={allowRepeats} muted={muted} onExit={() => setExperience('duel')} onComplete={finishLocal} /></main>
   }
 
   return (
-    <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-md flex-col overflow-hidden">
+    <main className="game-shell mx-auto flex h-dvh min-h-dvh w-full max-w-7xl flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col">
         {screen === 'login' && (
           <LoginScreen onGoogle={enterGoogle} onGuest={enterAsGuest} />
