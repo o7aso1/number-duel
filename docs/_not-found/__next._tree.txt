@@ -4,4 +4,4 @@
 :HL["/number-duel/_next/static/css/a975f3fd85a8c12f.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"_not-found","h":96,"c":"$Q2"}]]
-0:{"b":"TUfXamBo8rj--8-HyhzxC","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"tT49IkJay7vQLDf5Gf0dF","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

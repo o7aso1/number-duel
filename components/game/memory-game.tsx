@@ -8,6 +8,7 @@ import { seededDigits, todayKey } from '@/lib/progression'
 import { useDigitKeyboard } from '@/lib/use-digit-keyboard'
 
 type Phase = 'ready' | 'show' | 'input' | 'result' | 'finished'
+const DAILY_GOAL_LENGTH = 8
 
 function randomDigits(length: number) {
   return Array.from({ length }, () => Math.floor(Math.random() * 10)).join('')
@@ -19,7 +20,7 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
 }) {
   const [phase, setPhase] = useState<Phase>('ready')
   const [round, setRound] = useState(1)
-  const [lives, setLives] = useState(3)
+  const [lives, setLives] = useState(daily ? 1 : 3)
   const [sequence, setSequence] = useState('')
   const [value, setValue] = useState('')
   const [score, setScore] = useState(0)
@@ -29,9 +30,7 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
   const transitionRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const submittingRef = useRef(false)
   const [challengeDay] = useState(todayKey)
-  const length = round + 1
-  const targetRounds = daily ? 7 : 10
-  const showDuration = Math.min(4200, 1100 + sequence.length * 250)
+  const showDuration = 1100 + sequence.length * 250
 
   const showRound = useCallback((nextRound: number, nextSequence: string) => {
     setRound(nextRound)
@@ -55,9 +54,9 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
     return () => clearTimeout(timer)
   }, [phase, showDuration])
 
-  const finish = useCallback((finalScore: number, wonDaily: boolean, finalLength: number) => {
+  const finish = useCallback((finalScore: number, finalLength: number) => {
     setPhase('finished')
-    onComplete({ bestLength: finalLength, score: finalScore, xp: Math.max(40, Math.round(finalScore / 8)), daily, wonDaily })
+    onComplete({ bestLength: finalLength, score: finalScore, xp: Math.max(40, Math.round(finalScore / 8)), daily, wonDaily: daily && finalLength >= DAILY_GOAL_LENGTH })
   }, [daily, onComplete])
 
   const submit = useCallback(() => {
@@ -72,8 +71,7 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
       setBestLength(sequence.length)
       playSfx(muted, 'success')
       navigator.vibrate?.([25, 25, 45])
-      if (round >= targetRounds) transitionRef.current = setTimeout(() => finish(nextScore, daily, sequence.length), 700)
-      else transitionRef.current = setTimeout(() => {
+      transitionRef.current = setTimeout(() => {
         const nextLength = sequence.length + 1
         const digit = daily ? seededDigits(challengeDay, nextLength).slice(-1) : randomDigits(1)
         showRound(round + 1, sequence + digit)
@@ -83,10 +81,10 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
       setLives(nextLives)
       playSfx(muted, 'fail')
       navigator.vibrate?.(60)
-      if (daily || nextLives <= 0) transitionRef.current = setTimeout(() => finish(score, false, bestLength), 900)
+      if (nextLives <= 0) transitionRef.current = setTimeout(() => finish(score, bestLength), 900)
       else transitionRef.current = setTimeout(() => showRound(round, sequence), 900)
     }
-  }, [bestLength, challengeDay, daily, finish, lives, muted, phase, round, score, sequence, showRound, targetRounds, value])
+  }, [bestLength, challengeDay, daily, finish, lives, muted, phase, round, score, sequence, showRound, value])
 
   useDigitKeyboard({ enabled: phase === 'input', maxLength: sequence.length, value, onChange: setValue, onSubmit: submit })
 
@@ -94,7 +92,7 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
     if (transitionRef.current) clearTimeout(transitionRef.current)
     transitionRef.current = null
     submittingRef.current = false
-    setRound(1); setLives(3); setScore(0); setCorrect(false); setBestLength(0); setValue(''); setSequence(''); setPhase('ready')
+    setRound(1); setLives(daily ? 1 : 3); setScore(0); setCorrect(false); setBestLength(0); setValue(''); setSequence(''); setPhase('ready')
   }
   const onTouchEnd = (event: React.TouchEvent) => {
     const start = touchRef.current
@@ -111,21 +109,21 @@ export function MemoryGame({ daily, muted, onExit, onComplete }: {
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5">
       <header className="flex items-center justify-between"><button onClick={onExit} aria-label="العودة للرئيسية" className="glass-panel grid size-11 place-items-center rounded-[15px] text-muted-foreground transition-transform active:scale-90"><ArrowRight className="size-5" /></button><div className="text-center"><p className="eyebrow">FOCUS MODE</p><h1 className="mt-1 text-lg font-black">{daily ? 'التحدي اليومي' : 'ذاكرة الأرقام'}</h1><p className="text-[10px] text-muted-foreground">{daily ? challengeDay : 'السلسلة تكبر رقمًا كل جولة'}</p></div><span className="animate-pulse-ring grid size-11 place-items-center rounded-[15px] border border-secondary/20 bg-secondary/12 text-secondary"><Brain className="size-5" /></span></header>
 
-      <div className="grid grid-cols-3 gap-2.5"><Mini label="الجولة" value={`${round}/${targetRounds}`} /><Mini label="النقاط" value={score.toLocaleString('ar-SA')} /><Mini label="المحاولات" value={<span className="flex justify-center gap-0.5">{Array.from({ length: daily ? 1 : 3 }, (_, i) => <Heart key={i} className={`size-4 ${i < lives ? 'fill-destructive text-destructive' : 'text-muted'}`} />)}</span>} /></div>
+      <div className="grid grid-cols-3 gap-2.5"><Mini label="الجولة" value={round} /><Mini label="النقاط" value={score.toLocaleString('ar-SA')} /><Mini label="المحاولات" value={<span className="flex justify-center gap-0.5">{Array.from({ length: daily ? 1 : 3 }, (_, i) => <Heart key={i} className={`size-4 ${i < lives ? 'fill-destructive text-destructive' : 'text-muted'}`} />)}</span>} /></div>
 
       <div className={`flex min-h-0 flex-1 flex-col gap-5 ${phase === 'input' ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(280px,.55fr)] lg:items-stretch lg:gap-6' : 'lg:items-center lg:justify-center'}`}>
 
       <div className={`glass-panel relative flex min-h-56 w-full flex-1 flex-col items-center justify-center overflow-hidden rounded-[28px] p-6 text-center ${phase === 'input' ? '' : 'lg:max-w-3xl lg:min-h-[440px] lg:flex-none'}`}><span className="pointer-events-none absolute -top-24 size-56 rounded-full bg-secondary/10 blur-[70px]" />
-        {phase === 'ready' && <><span className="animate-float-soft relative grid size-24 place-items-center rounded-[28px] border border-secondary/25 bg-gradient-to-br from-secondary/20 to-primary/10 text-secondary shadow-[0_24px_60px_-25px_var(--secondary)]"><Brain className="size-11" /></span><p className="eyebrow mt-7">MEMORY CHALLENGE</p><h2 className="mt-2 text-2xl font-black">{daily ? 'نفس التحدي للجميع' : 'اختبر ذاكرتك'}</h2><p className="mt-2 max-w-72 text-sm leading-7 text-muted-foreground">نبدأ برقمين. احفظ السلسلة، وفي كل جولة نضيف رقمًا واحدًا إلى نهايتها.</p><button onClick={begin} className="premium-button mt-7 w-full max-w-56 rounded-[16px] px-8 py-3.5 font-black">ابدأ التحدي</button></>}
+        {phase === 'ready' && <><span className="animate-float-soft relative grid size-24 place-items-center rounded-[28px] border border-secondary/25 bg-gradient-to-br from-secondary/20 to-primary/10 text-secondary shadow-[0_24px_60px_-25px_var(--secondary)]"><Brain className="size-11" /></span><p className="eyebrow mt-7">MEMORY CHALLENGE</p><h2 className="mt-2 text-2xl font-black">{daily ? 'نفس التحدي للجميع' : 'اختبر ذاكرتك'}</h2><p className="mt-2 max-w-72 text-sm leading-7 text-muted-foreground">نبدأ برقمين، ونضيف رقمًا كل جولة. استمر حتى تنفد محاولاتك.</p><button onClick={begin} className="premium-button mt-7 w-full max-w-56 rounded-[16px] px-8 py-3.5 font-black">ابدأ التحدي</button></>}
         {phase === 'show' && <><p className="eyebrow mb-5">{round === 1 ? 'احفظ الرقمين' : 'رقم جديد أُضيف في النهاية'}</p><p className="relative max-w-full break-all font-mono text-4xl font-black tracking-[0.12em] text-primary drop-shadow-[0_0_25px_color-mix(in_oklab,var(--primary)_35%,transparent)] animate-in zoom-in sm:text-5xl" dir="ltr"><span>{sequence.slice(0, -1)}</span><span className={round > 1 ? 'text-secondary' : ''}>{sequence.slice(-1)}</span></p><div className="mt-8 h-1.5 w-full max-w-64 overflow-hidden rounded-full bg-black/25 ring-1 ring-white/5"><div key={`${round}-${lives}`} className="h-full origin-right animate-[memory-countdown_1s_linear_forwards] bg-gradient-to-l from-primary to-secondary shadow-[0_0_12px_var(--primary)]" style={{ animationDuration: `${showDuration}ms` }} /></div></>}
         {phase === 'input' && <><p className="mb-4 text-sm text-muted-foreground">اكتب السلسلة كاملة بالترتيب</p><div className="flex flex-wrap justify-center gap-1.5" dir="ltr" aria-label={`أدخل ${sequence.length} أرقام`}>{Array.from({ length: sequence.length }, (_, i) => <span key={i} className="grid size-9 place-items-center rounded-lg border border-border bg-background font-mono text-lg font-bold">{value[i] || ''}</span>)}</div></>}
         {phase === 'result' && <><span className="text-5xl" role="status">{correct ? '✅' : '❌'}</span><h2 className="mt-3 text-xl font-black">{correct ? 'ممتاز! نضيف رقمًا جديدًا' : daily || lives === 0 ? 'انتهت المحاولة' : 'حاول نفس السلسلة مرة أخرى'}</h2>{!correct && (daily || lives === 0) && <p className="mt-2 font-mono text-2xl font-bold tracking-widest text-secondary" dir="ltr">{sequence}</p>}</>}
-        {phase === 'finished' && <><Trophy className="size-16 text-primary" /><h2 className="mt-4 text-3xl font-black">{daily && correct ? 'أنجزت تحدي اليوم!' : 'نتيجتك'}</h2><p className="mt-2 font-mono text-4xl font-black text-primary">{score.toLocaleString('ar-SA')}</p><p className="mt-2 text-sm text-muted-foreground">أطول سلسلة حفظتها: {bestLength} أرقام</p><div className="mt-6 flex w-full gap-2"><button onClick={reset} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-primary-foreground"><RotateCcw className="size-4" />إعادة</button><button onClick={onExit} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 font-bold">الرئيسية</button></div></>}
+        {phase === 'finished' && <><Trophy className="size-16 text-primary" /><h2 className="mt-4 text-3xl font-black">{daily && bestLength >= DAILY_GOAL_LENGTH ? 'أنجزت هدف اليوم!' : 'نتيجتك'}</h2><p className="mt-2 font-mono text-4xl font-black text-primary">{score.toLocaleString('ar-SA')}</p><p className="mt-2 text-sm text-muted-foreground">أطول سلسلة حفظتها: {bestLength} أرقام</p><div className="mt-6 flex w-full gap-2"><button onClick={reset} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 font-bold text-primary-foreground"><RotateCcw className="size-4" />إعادة</button><button onClick={onExit} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-background py-3 font-bold">الرئيسية</button></div></>}
       </div>
 
       {phase === 'input' && <div className="flex flex-col justify-center gap-4 lg:rounded-[28px] lg:border lg:border-white/10 lg:bg-white/[.025] lg:p-5"><Keypad onDigit={digit => setValue(v => v.length < sequence.length ? v + digit : v)} onDelete={() => setValue(v => v.slice(0, -1))} /><button onClick={submit} disabled={value.length !== sequence.length} className="flex items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-lg font-bold text-primary-foreground disabled:opacity-40"><Send className="size-5" />تأكيد</button><p className="text-center text-[10px] text-muted-foreground lg:hidden">اسحب للأعلى للتأكيد أو جانبًا للحذف</p></div>}
       </div>
-      {daily && phase === 'ready' && <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-muted-foreground"><CalendarDays className="size-4 text-primary" />يتغيّر التحدي عند منتصف الليل ويعرض التسلسل نفسه للجميع.</div>}
+      {daily && phase === 'ready' && <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-muted-foreground"><CalendarDays className="size-4 text-primary" />التسلسل نفسه للجميع. احفظ 8 أرقام لإنجاز هدف اليوم، ثم واصل قدر استطاعتك.</div>}
       </div>
       {phase === 'result' && correct && <Sparkles className="pointer-events-none fixed left-1/2 top-1/2 size-28 -translate-x-1/2 -translate-y-1/2 text-success animate-correct-burst" />}
     </div>
