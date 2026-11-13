@@ -1,7 +1,7 @@
 :HL["/number-duel/_next/static/media/01f0c602c274ea55-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/number-duel/_next/static/media/350b852752f8489d-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
 :HL["/number-duel/_next/static/media/bb3ef058b751a6ad-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
-:HL["/number-duel/_next/static/css/fb6af63ba5ce0c60.css","style"]
+:HL["/number-duel/_next/static/css/d3391840cb58d9be.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"_not-found","h":96,"c":"$Q2"}]]
-0:{"b":"STUT03HqJwzWHdFQtEVHK","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"oe3kpNrcqNcjlJT6zD8K6","t":{"t":{"s":"","h":80,"c":"$Q1"}}}

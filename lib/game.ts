@@ -169,6 +169,30 @@ export function countPossibleSecrets(
   return count
 }
 
+/** Count every guess prefix in one pass, yielding so six-digit games keep responding. */
+export async function countPossibleSecretsHistory(
+  length: number,
+  allowRepeats: boolean,
+  guesses: Guess[],
+  signal?: AbortSignal,
+): Promise<number[]> {
+  const counts = Array(guesses.length).fill(0) as number[]
+  const max = 10 ** length
+  for (let start = 0; start < max; start += 10000) {
+    if (signal?.aborted) return counts
+    for (let i = start; i < Math.min(start + 10000, max); i++) {
+      const candidate = String(i).padStart(length, '0')
+      if (!allowRepeats && !hasUniqueDigits(candidate)) continue
+      for (let index = 0; index < guesses.length; index++) {
+        if (countCorrect(guesses[index].value, candidate) !== guesses[index].correct) break
+        counts[index]++
+      }
+    }
+    if (start + 10000 < max) await new Promise<void>(resolve => setTimeout(resolve, 0))
+  }
+  return counts
+}
+
 export function calculateScore({
   length,
   mode,

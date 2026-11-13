@@ -5,7 +5,7 @@ import {
   buildCandidates,
   calculateScore,
   countCorrect,
-  countPossibleSecrets,
+  countPossibleSecretsHistory,
   filterCandidates,
   generateSecret,
   isValidGuess,
@@ -856,22 +856,22 @@ export function GameApp() {
   }, [screen, startedAt])
 
   useEffect(() => {
-    const timerId = setTimeout(() => {
-      const initial = totalSecretCount(length, allowRepeats)
-      if (!guesses.length) {
-        setProbabilityHistory([])
-        return
-      }
-      const history: ProbabilityStep[] = []
-      let before = initial
-      for (let index = 0; index < guesses.length; index++) {
-        const after = countPossibleSecrets(length, allowRepeats, guesses.slice(0, index + 1))
-        history.push({ before, after })
+    const controller = new AbortController()
+    if (!guesses.length) {
+      setProbabilityHistory([])
+      return () => controller.abort()
+    }
+    void countPossibleSecretsHistory(length, allowRepeats, guesses, controller.signal).then(counts => {
+      if (controller.signal.aborted) return
+      let before = totalSecretCount(length, allowRepeats)
+      const history: ProbabilityStep[] = counts.map(after => {
+        const step = { before, after }
         before = after
-      }
+        return step
+      })
       setProbabilityHistory(history)
-    }, 0)
-    return () => clearTimeout(timerId)
+    })
+    return () => controller.abort()
   }, [allowRepeats, guesses, length])
 
   const useHint = async (type: HintType) => {
