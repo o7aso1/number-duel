@@ -605,7 +605,7 @@ export function GameApp() {
       setCpuPickingSecret(true)
       playSfx(muted, 'success')
       if (cpuPrepRef.current) clearTimeout(cpuPrepRef.current)
-      const thinkMs = 4000 + Math.floor(Math.random() * 2000)
+      const thinkMs = 700 + Math.floor(Math.random() * 400)
       cpuPrepRef.current = setTimeout(() => {
         const cpuSecret = generateSecret(digits, allowRepeats)
         setOpponentSecret(cpuSecret)
@@ -656,7 +656,7 @@ export function GameApp() {
     if (mode !== 'cpu' || !cpuPickingSecret || !playerSecret || screen !== 'setup') return
     if (cpuPrepRef.current) return
     const digits = length >= 3 && length <= 6 ? length : 4
-    const thinkMs = 2500 + Math.floor(Math.random() * 1500)
+    const thinkMs = 700 + Math.floor(Math.random() * 400)
     cpuPrepRef.current = setTimeout(() => {
       setOpponentSecret(generateSecret(digits as Difficulty, allowRepeats))
       setGuesses([])
@@ -762,7 +762,7 @@ export function GameApp() {
     applyOnlineRoom(data.room as RoomPayload, playerId, { silent: true })
   }
 
-  // CPU turn — think for ~4.5–6.5s so it feels human
+  // A brief pause makes the turn change readable without feeling stalled.
   useEffect(() => {
     if (screen !== 'play' || mode !== 'cpu' || isMyTurn || won) return
     if (!playerSecret || !opponentSecret) return
@@ -772,7 +772,7 @@ export function GameApp() {
       return
     }
     setPresence('wait')
-    const thinkMs = 4500 + Math.floor(Math.random() * 2000)
+    const thinkMs = 900 + Math.floor(Math.random() * 500)
     const t = setTimeout(() => {
       let pool = cpuCandidates.length ? cpuCandidates : buildCandidates(length, allowRepeats)
       if (!pool.includes(playerSecret)) pool = [...pool, playerSecret]
